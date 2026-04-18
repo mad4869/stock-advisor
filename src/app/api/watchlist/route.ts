@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStockQuote, getHistoricalData } from '@/lib/stockData';
 import { calculateIndicators } from '@/lib/indicators';
 import { getWatchAction } from '@/lib/recommendations';
-import { Market } from '@/types';
+import { Market, Signal } from '@/types';
 
 export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
           const pnl = currentPrice - item.buyPrice;
           const pnlPercent = (pnl / item.buyPrice) * 100;
 
-          let action = { action: 'HOLD' as const, reason: 'Insufficient data for analysis.' };
+          let action: { action: Signal; reason: string } = { action: 'HOLD', reason: 'Insufficient data for analysis.' };
           if (indicators) {
             action = getWatchAction(item.buyPrice, currentPrice, indicators);
           }

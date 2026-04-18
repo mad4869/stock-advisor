@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const usProvider = process.env.US_STOCK_PROVIDER || 'mock';
   const idxProvider = process.env.IDX_STOCK_PROVIDER || 'mock';
