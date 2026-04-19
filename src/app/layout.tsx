@@ -8,9 +8,20 @@ import { Analytics } from '@vercel/analytics/next';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
   title: 'StockAdvisor — Smart Stock Recommendations',
   description:
-    'Get AI-powered stock recommendations, lot size calculations, and portfolio monitoring for US and Indonesian markets.',
+    'Get data-driven stock recommendations, lot size calculations, and portfolio monitoring for US and Indonesian markets.',
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/apple-icon.png',
+  },
+  openGraph: {
+    title: 'StockAdvisor — Smart Stock Recommendations',
+    description:
+      'Technical analysis powered stock recommendations for US & Indonesian markets.',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({

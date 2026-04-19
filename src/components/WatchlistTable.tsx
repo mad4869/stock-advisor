@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
+import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
 import { Market, WatchlistItem } from '@/types';
 import SignalBadge from './SignalBadge';
@@ -21,6 +22,7 @@ import {
 
 export default function WatchlistTable() {
   const hydrated = useHydration();
+  const { closePosition } = usePortfolioStore();
   const { items, addItem, removeItem, updateItem, clearAll } = useWatchlistStore();
   const [showAdd, setShowAdd] = useState(false);
   const [addMarket, setAddMarket] = useState<Market>('US');
@@ -254,6 +256,24 @@ export default function WatchlistTable() {
               key={item.id}
               item={item}
               onRemove={() => removeItem(item.id)}
+              onClose={(sellPrice: number) => {
+                const pnl = (sellPrice - item.buyPrice) * item.quantity * (item.market === 'ID' ? 100 : 1);
+                const pnlPercent = ((sellPrice - item.buyPrice) / item.buyPrice) * 100;
+                closePosition({
+                  id: `closed-${item.id}-${Date.now()}`,
+                  symbol: item.symbol,
+                  market: item.market,
+                  name: item.name,
+                  buyPrice: item.buyPrice,
+                  buyDate: item.buyDate,
+                  sellPrice,
+                  sellDate: new Date().toISOString().split('T')[0],
+                  quantity: item.quantity,
+                  pnl,
+                  pnlPercent,
+                });
+                removeItem(item.id);
+              }}
               formatCurrency={formatCurrency}
             />
           ))}
@@ -279,14 +299,26 @@ export default function WatchlistTable() {
 function WatchlistCard({
   item,
   onRemove,
+  onClose,
   formatCurrency,
 }: {
   item: WatchlistItem;
   onRemove: () => void;
+  onClose: (sellPrice: number) => void;
   formatCurrency: (v: number, m: Market) => string;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [showCloseForm, setShowCloseForm] = useState(false);
+  const [sellPrice, setSellPrice] = useState('');
   const isProfit = item.pnlPercent >= 0;
+
+  const handleClose = () => {
+    const price = parseFloat(sellPrice);
+    if (!price || price <= 0) return;
+    if (confirm(`Close ${item.symbol} position at ${formatCurrency(price, item.market)}?`)) {
+      onClose(price);
+    }
+  };
 
   return (
     <div className="card-hover">
@@ -302,15 +334,51 @@ function WatchlistCard({
           <p className="text-sm text-gray-500">{item.name}</p>
         </div>
 
-        <button
-          onClick={onRemove}
-          className="text-gray-600 hover:text-red-400 transition-colors p-1"
-          title="Remove"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowCloseForm(!showCloseForm)}
+            className="text-xs bg-dark-600 hover:bg-dark-500 text-gray-400 hover:text-white px-2 py-1 rounded-lg transition-colors"
+            title="Close Position (Sell)"
+          >
+            {showCloseForm ? 'Cancel' : 'Close'}
+          </button>
+          <button
+            onClick={onRemove}
+            className="text-gray-600 hover:text-red-400 transition-colors p-1"
+            title="Remove"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
+      {/* Close Position Form */}
+      {showCloseForm && (
+        <div className="mt-3 bg-dark-800 rounded-xl p-3 border border-dark-600 animate-fade-in">
+          <p className="text-xs text-gray-400 mb-2">
+            Record the sale of this position to track realized P&L
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={sellPrice}
+              onChange={(e) => setSellPrice(e.target.value)}
+              placeholder={`Sell price (${item.market === 'ID' ? 'Rp' : '$'})`}
+              className="input-field text-sm py-2 flex-1"
+              min="0"
+              step="any"
+            />
+            <button onClick={handleClose} className="btn-primary text-sm py-2 px-4">
+              Sell
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-600 mt-1.5">
+            Current price: {formatCurrency(item.currentPrice, item.market)}
+          </p>
+        </div>
+      )}
+
+      {/* Prices */}
       <div className="grid grid-cols-3 gap-3 mt-4">
         <div>
           <p className="text-xs text-gray-500">Buy Price</p>
@@ -338,6 +406,7 @@ function WatchlistCard({
         </div>
       </div>
 
+      {/* Action Reason */}
       <button onClick={() => setShowDetails(!showDetails)} className="mt-3 w-full text-left">
         <div
           className={`rounded-xl p-3 text-sm border ${

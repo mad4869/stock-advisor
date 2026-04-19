@@ -107,3 +107,53 @@ export interface PopularStock {
   market: Market;
   sector: string;
 }
+
+// ====== NEW: Portfolio P&L History Types ======
+
+export interface PortfolioSnapshot {
+  date: string; // ISO date string YYYY-MM-DD
+  timestamp: string; // ISO datetime
+  totalInvested: number;
+  totalCurrentValue: number;
+  totalPnL: number;
+  totalPnLPercent: number;
+  cashBalance: number;
+  positions: PositionSnapshot[];
+}
+
+export interface PositionSnapshot {
+  symbol: string;
+  market: Market;
+  buyPrice: number;
+  currentPrice: number;
+  quantity: number;
+  invested: number;
+  currentValue: number;
+  pnl: number;
+  pnlPercent: number;
+}
+
+export interface PortfolioSummary {
+  totalInvested: number;
+  totalCurrentValue: number;
+  totalPnL: number;
+  totalPnLPercent: number;
+  totalRealizedPnL: number;
+  bestPerformer: { symbol: string; pnlPercent: number } | null;
+  worstPerformer: { symbol: string; pnlPercent: number } | null;
+  winRate: number; // percentage of positions in profit
+}
+
+export interface ClosedPosition {
+  id: string;
+  symbol: string;
+  market: Market;
+  name: string;
+  buyPrice: number;
+  buyDate: string;
+  sellPrice: number;
+  sellDate: string;
+  quantity: number;
+  pnl: number;
+  pnlPercent: number;
+}
