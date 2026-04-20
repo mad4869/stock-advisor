@@ -89,18 +89,15 @@ function calculateMarketPnL(items: WatchlistItem[], market: Market): MarketPnL {
 }
 
 interface PortfolioStore {
-    // P&L History
     snapshots: PortfolioSnapshot[];
     addSnapshot: (snapshot: PortfolioSnapshot) => void;
     clearSnapshots: () => void;
     lastSnapshotDate: string | null;
 
-    // Closed positions
     closedPositions: ClosedPosition[];
     closePosition: (position: ClosedPosition) => void;
     clearClosedPositions: () => void;
 
-    // Actions
     calculateSummary: (watchlistItems: WatchlistItem[]) => PortfolioSummary;
     takeSnapshot: (watchlistItems: WatchlistItem[]) => void;
     getSnapshotsByRange: (days: number) => PortfolioSnapshot[];
@@ -116,7 +113,6 @@ export const usePortfolioStore = create<PortfolioStore>()(
             addSnapshot: (snapshot) =>
                 set((state) => {
                     const updated = [...state.snapshots, snapshot];
-                    // Keep max 365 snapshots
                     const trimmed = updated.length > 365 ? updated.slice(-365) : updated;
                     return { snapshots: trimmed, lastSnapshotDate: snapshot.date };
                 }),
@@ -134,7 +130,10 @@ export const usePortfolioStore = create<PortfolioStore>()(
                 const cutoff = new Date();
                 cutoff.setDate(cutoff.getDate() - days);
                 const cutoffStr = cutoff.toISOString().split('T')[0];
-                return get().snapshots.filter((s) => s.date >= cutoffStr);
+                return get()
+                    .snapshots
+                    .filter((s) => s.date >= cutoffStr)
+                    .filter((s) => s.us !== undefined && s.id !== undefined);
             },
 
             calculateSummary: (watchlistItems: WatchlistItem[]): PortfolioSummary => {
@@ -173,26 +172,29 @@ export const usePortfolioStore = create<PortfolioStore>()(
                 const today = new Date().toISOString().split('T')[0];
 
                 if (state.lastSnapshotDate === today) return;
-                if (watchlistItems.length === 0) return;
+                if (!watchlistItems || watchlistItems.length === 0) return;
 
-                const positions = watchlistItems.map((item) => {
-                    const multiplier = item.market === 'ID' ? 100 : 1;
-                    const invested = item.buyPrice * item.quantity * multiplier;
-                    const currentValue = item.currentPrice * item.quantity * multiplier;
-                    return {
-                        symbol: item.symbol,
-                        market: item.market,
-                        buyPrice: item.buyPrice,
-                        currentPrice: item.currentPrice,
-                        quantity: item.quantity,
-                        invested,
-                        currentValue,
-                        pnl: currentValue - invested,
-                        pnlPercent: invested > 0 ? ((currentValue - invested) / invested) * 100 : 0,
-                    };
-                });
+                const positions = watchlistItems
+                    .filter((item) => item.currentPrice > 0)
+                    .map((item) => {
+                        const multiplier = item.market === 'ID' ? 100 : 1;
+                        const invested = item.buyPrice * item.quantity * multiplier;
+                        const currentValue = item.currentPrice * item.quantity * multiplier;
+                        return {
+                            symbol: item.symbol,
+                            market: item.market,
+                            buyPrice: item.buyPrice,
+                            currentPrice: item.currentPrice,
+                            quantity: item.quantity,
+                            invested,
+                            currentValue,
+                            pnl: currentValue - invested,
+                            pnlPercent: invested > 0 ? ((currentValue - invested) / invested) * 100 : 0,
+                        };
+                    });
 
-                // Calculate per-market totals
+                if (positions.length === 0) return;
+
                 function marketSnapshot(market: Market): MarketSnapshotData {
                     const filtered = positions.filter((p) => p.market === market);
                     if (filtered.length === 0) return emptyMarketSnapshot();

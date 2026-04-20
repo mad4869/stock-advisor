@@ -4,11 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
-import { Market, MarketPnL, PortfolioSummary, ClosedPosition } from '@/types';
+import { Market, MarketPnL, PortfolioSummary, ClosedPosition, MarketSnapshotData } from '@/types';
 import {
-    TrendingUp,
-    TrendingDown,
-    DollarSign,
     PieChart,
     Award,
     AlertTriangle,
@@ -31,10 +28,10 @@ import {
 } from 'recharts';
 
 // ============================================================
-// Currency formatting helpers — used everywhere
+// Currency formatting helpers
 // ============================================================
 
-function formatUSD(value: number, showSign = false): string {
+function formatUSD(value: number, showSign: boolean = false): string {
     const sign = showSign && value >= 0 ? '+' : '';
     const formatted = value.toLocaleString('en-US', {
         minimumFractionDigits: 2,
@@ -43,13 +40,13 @@ function formatUSD(value: number, showSign = false): string {
     return sign + '$' + formatted;
 }
 
-function formatIDR(value: number, showSign = false): string {
+function formatIDR(value: number, showSign: boolean = false): string {
     const sign = showSign && value >= 0 ? '+' : '';
     const formatted = value.toLocaleString('id-ID');
     return sign + 'Rp' + formatted;
 }
 
-function formatCurrency(value: number, market: Market, showSign = false): string {
+function formatCurrency(value: number, market: Market, showSign: boolean = false): string {
     if (market === 'ID') return formatIDR(value, showSign);
     return formatUSD(value, showSign);
 }
@@ -68,6 +65,33 @@ function emptyMarketPnLDefault(market: Market): MarketPnL {
         winRate: 0,
         bestPerformer: null,
         worstPerformer: null,
+    };
+}
+
+// ============================================================
+// Safely read market data from a snapshot
+// Handles both old format (flat) and new format (per-market)
+// ============================================================
+
+function getMarketDataFromSnapshot(
+    snapshot: any,
+    market: 'US' | 'ID'
+): MarketSnapshotData {
+    // New format: snapshot.us and snapshot.id exist
+    if (market === 'US' && snapshot.us && typeof snapshot.us.totalCurrentValue === 'number') {
+        return snapshot.us;
+    }
+    if (market === 'ID' && snapshot.id && typeof snapshot.id.totalCurrentValue === 'number') {
+        return snapshot.id;
+    }
+
+    // Old format: flat structure — treat all data as the selected market
+    return {
+        totalCurrentValue: snapshot.totalCurrentValue || 0,
+        totalInvested: snapshot.totalInvested || 0,
+        totalPnL: snapshot.totalPnL || 0,
+        totalPnLPercent: snapshot.totalPnLPercent || 0,
+        positionCount: snapshot.positions?.length || 0,
     };
 }
 
@@ -92,6 +116,20 @@ export default function PortfolioDashboard() {
     const [timeRange, setTimeRange] = useState<7 | 30 | 90 | 365>(30);
     const [chartMarket, setChartMarket] = useState<ChartMarket>('US');
 
+    // Clear old-format snapshots automatically (one-time migration)
+    useEffect(() => {
+        if (hydrated && snapshots.length > 0) {
+            const hasOldFormat = snapshots.some(
+                (s: any) => s.us === undefined || s.id === undefined
+            );
+            if (hasOldFormat) {
+                console.log('[Portfolio] Clearing old-format snapshots');
+                clearSnapshots();
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hydrated]);
+
     // Take snapshot when data is available
     useEffect(() => {
         if (hydrated && watchlistItems.length > 0) {
@@ -115,7 +153,7 @@ export default function PortfolioDashboard() {
         return calculateSummary(watchlistItems);
     }, [hydrated, watchlistItems, calculateSummary]);
 
-    // Chart data per market
+    // Build chart data safely
     const chartData = useMemo(() => {
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - timeRange);
@@ -124,18 +162,19 @@ export default function PortfolioDashboard() {
         return snapshots
             .filter((s) => s.date >= cutoffStr)
             .map((s) => {
-                const marketData = chartMarket === 'US' ? s.us : s.id;
+                const marketData = getMarketDataFromSnapshot(s, chartMarket);
+
                 return {
                     date: s.date,
                     displayDate: new Date(s.date).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                     }),
-                    totalValue: Math.round(marketData.totalCurrentValue),
-                    totalInvested: Math.round(marketData.totalInvested),
-                    pnl: Math.round(marketData.totalPnL),
-                    pnlPercent: Math.round(marketData.totalPnLPercent * 100) / 100,
-                    positions: marketData.positionCount,
+                    totalValue: Math.round(marketData.totalCurrentValue || 0),
+                    totalInvested: Math.round(marketData.totalInvested || 0),
+                    pnl: Math.round(marketData.totalPnL || 0),
+                    pnlPercent: Math.round((marketData.totalPnLPercent || 0) * 100) / 100,
+                    positions: marketData.positionCount || 0,
                 };
             })
             .filter((d) => d.positions > 0);
@@ -151,6 +190,7 @@ export default function PortfolioDashboard() {
         else if (hasIDPositions && !hasUSPositions) setChartMarket('ID');
     }, [hasUSPositions, hasIDPositions]);
 
+    // Loading state
     if (!hydrated) {
         return (
             <div className="card flex items-center justify-center py-12">
@@ -374,8 +414,7 @@ export default function PortfolioDashboard() {
                                     formatter={(value: number, name: string) => {
                                         const prefix = chartMarket === 'ID' ? 'Rp' : '$';
                                         if (name === 'pnlPercent') return [value.toFixed(2) + '%', 'P&L %'];
-                                        if (name === 'pnl')
-                                            return [prefix + value.toLocaleString(), 'P&L'];
+                                        if (name === 'pnl') return [prefix + value.toLocaleString(), 'P&L'];
                                         if (name === 'totalValue')
                                             return [prefix + value.toLocaleString(), 'Value'];
                                         return [value.toLocaleString(), name];
@@ -491,7 +530,6 @@ function MarketPnLCard({
 
     return (
         <div className="card">
-            {/* Header */}
             <div className="flex items-center gap-2 mb-4">
                 <span className="text-xl">{flag}</span>
                 <div>
@@ -503,7 +541,6 @@ function MarketPnLCard({
                 </div>
             </div>
 
-            {/* P&L Main */}
             <div className="bg-dark-800 rounded-xl p-4 mb-4">
                 <div className="flex items-end justify-between">
                     <div>
@@ -534,7 +571,6 @@ function MarketPnLCard({
                 </div>
             </div>
 
-            {/* Stats Grid */}
             <div className="grid grid-cols-2 gap-3">
                 <div className="bg-dark-800 rounded-xl p-3">
                     <p className="text-xs text-gray-500">Invested</p>
@@ -570,7 +606,6 @@ function MarketPnLCard({
                 </div>
             </div>
 
-            {/* Best / Worst */}
             <div className="grid grid-cols-2 gap-3 mt-3">
                 <div className="bg-dark-800 rounded-xl p-3">
                     <div className="flex items-center gap-1 mb-1">
