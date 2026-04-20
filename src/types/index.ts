@@ -108,17 +108,37 @@ export interface PopularStock {
   sector: string;
 }
 
-// ====== NEW: Portfolio P&L History Types ======
+// ====== Portfolio Types — Dual Currency ======
 
-export interface PortfolioSnapshot {
-  date: string; // ISO date string YYYY-MM-DD
-  timestamp: string; // ISO datetime
+export interface MarketPnL {
+  market: Market;
+  currency: string;
   totalInvested: number;
   totalCurrentValue: number;
   totalPnL: number;
   totalPnLPercent: number;
-  cashBalance: number;
+  positionCount: number;
+  winnersCount: number;
+  losersCount: number;
+  winRate: number;
+  bestPerformer: { symbol: string; pnlPercent: number } | null;
+  worstPerformer: { symbol: string; pnlPercent: number } | null;
+}
+
+export interface PortfolioSnapshot {
+  date: string; // YYYY-MM-DD
+  timestamp: string; // ISO datetime
+  us: MarketSnapshotData;
+  id: MarketSnapshotData;
   positions: PositionSnapshot[];
+}
+
+export interface MarketSnapshotData {
+  totalInvested: number;
+  totalCurrentValue: number;
+  totalPnL: number;
+  totalPnLPercent: number;
+  positionCount: number;
 }
 
 export interface PositionSnapshot {
@@ -134,14 +154,14 @@ export interface PositionSnapshot {
 }
 
 export interface PortfolioSummary {
-  totalInvested: number;
-  totalCurrentValue: number;
-  totalPnL: number;
-  totalPnLPercent: number;
-  totalRealizedPnL: number;
-  bestPerformer: { symbol: string; pnlPercent: number } | null;
-  worstPerformer: { symbol: string; pnlPercent: number } | null;
-  winRate: number; // percentage of positions in profit
+  us: MarketPnL;
+  id: MarketPnL;
+  totalPositions: number;
+  totalRealizedPnL: {
+    us: number;
+    id: number;
+  };
+  overallWinRate: number;
 }
 
 export interface ClosedPosition {

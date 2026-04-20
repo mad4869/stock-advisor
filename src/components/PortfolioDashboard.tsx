@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
-import { PortfolioSummary } from '@/types';
+import { Market, MarketPnL, PortfolioSummary, ClosedPosition } from '@/types';
 import {
     TrendingUp,
     TrendingDown,
@@ -17,16 +17,65 @@ import {
     Loader2,
     Trash2,
     History,
+    ArrowUpRight,
+    ArrowDownRight,
 } from 'lucide-react';
 import {
+    AreaChart,
+    Area,
     XAxis,
     YAxis,
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    AreaChart,
-    Area,
 } from 'recharts';
+
+// ============================================================
+// Currency formatting helpers — used everywhere
+// ============================================================
+
+function formatUSD(value: number, showSign = false): string {
+    const sign = showSign && value >= 0 ? '+' : '';
+    const formatted = value.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+    return sign + '$' + formatted;
+}
+
+function formatIDR(value: number, showSign = false): string {
+    const sign = showSign && value >= 0 ? '+' : '';
+    const formatted = value.toLocaleString('id-ID');
+    return sign + 'Rp' + formatted;
+}
+
+function formatCurrency(value: number, market: Market, showSign = false): string {
+    if (market === 'ID') return formatIDR(value, showSign);
+    return formatUSD(value, showSign);
+}
+
+function emptyMarketPnLDefault(market: Market): MarketPnL {
+    return {
+        market,
+        currency: market === 'ID' ? 'IDR' : 'USD',
+        totalInvested: 0,
+        totalCurrentValue: 0,
+        totalPnL: 0,
+        totalPnLPercent: 0,
+        positionCount: 0,
+        winnersCount: 0,
+        losersCount: 0,
+        winRate: 0,
+        bestPerformer: null,
+        worstPerformer: null,
+    };
+}
+
+// ============================================================
+// Main Component
+// ============================================================
+
+type ChartMarket = 'US' | 'ID';
 
 export default function PortfolioDashboard() {
     const hydrated = useHydration();
@@ -41,11 +90,12 @@ export default function PortfolioDashboard() {
     } = usePortfolioStore();
 
     const [timeRange, setTimeRange] = useState<7 | 30 | 90 | 365>(30);
+    const [chartMarket, setChartMarket] = useState<ChartMarket>('US');
 
-    // Take a snapshot whenever watchlist data is refreshed
+    // Take snapshot when data is available
     useEffect(() => {
         if (hydrated && watchlistItems.length > 0) {
-            const hasCurrentPrices = watchlistItems.some((item) => item.currentPrice > 0);
+            const hasCurrentPrices = watchlistItems.some((i) => i.currentPrice > 0);
             if (hasCurrentPrices) {
                 takeSnapshot(watchlistItems);
             }
@@ -55,19 +105,17 @@ export default function PortfolioDashboard() {
     const summary: PortfolioSummary = useMemo(() => {
         if (!hydrated) {
             return {
-                totalInvested: 0,
-                totalCurrentValue: 0,
-                totalPnL: 0,
-                totalPnLPercent: 0,
-                totalRealizedPnL: 0,
-                bestPerformer: null,
-                worstPerformer: null,
-                winRate: 0,
+                us: emptyMarketPnLDefault('US'),
+                id: emptyMarketPnLDefault('ID'),
+                totalPositions: 0,
+                totalRealizedPnL: { us: 0, id: 0 },
+                overallWinRate: 0,
             };
         }
         return calculateSummary(watchlistItems);
     }, [hydrated, watchlistItems, calculateSummary]);
 
+    // Chart data per market
     const chartData = useMemo(() => {
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - timeRange);
@@ -75,23 +123,33 @@ export default function PortfolioDashboard() {
 
         return snapshots
             .filter((s) => s.date >= cutoffStr)
-            .map((s) => ({
-                date: s.date,
-                displayDate: new Date(s.date).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                }),
-                totalValue: Math.round(s.totalCurrentValue * 100) / 100,
-                totalInvested: Math.round(s.totalInvested * 100) / 100,
-                pnl: Math.round(s.totalPnL * 100) / 100,
-                pnlPercent: Math.round(s.totalPnLPercent * 100) / 100,
-            }));
-    }, [snapshots, timeRange]);
+            .map((s) => {
+                const marketData = chartMarket === 'US' ? s.us : s.id;
+                return {
+                    date: s.date,
+                    displayDate: new Date(s.date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                    }),
+                    totalValue: Math.round(marketData.totalCurrentValue),
+                    totalInvested: Math.round(marketData.totalInvested),
+                    pnl: Math.round(marketData.totalPnL),
+                    pnlPercent: Math.round(marketData.totalPnLPercent * 100) / 100,
+                    positions: marketData.positionCount,
+                };
+            })
+            .filter((d) => d.positions > 0);
+    }, [snapshots, timeRange, chartMarket]);
 
-    const hasMixedCurrencies = useMemo(() => {
-        const markets = new Set(watchlistItems.map((i) => i.market));
-        return markets.size > 1;
-    }, [watchlistItems]);
+    // Check which markets have positions
+    const hasUSPositions = watchlistItems.some((i) => i.market === 'US');
+    const hasIDPositions = watchlistItems.some((i) => i.market === 'ID');
+
+    // Auto-select chart market
+    useEffect(() => {
+        if (hasUSPositions && !hasIDPositions) setChartMarket('US');
+        else if (hasIDPositions && !hasUSPositions) setChartMarket('ID');
+    }, [hasUSPositions, hasIDPositions]);
 
     if (!hydrated) {
         return (
@@ -102,171 +160,177 @@ export default function PortfolioDashboard() {
         );
     }
 
-    const isProfit = summary.totalPnL >= 0;
-    const hasData = watchlistItems.length > 0;
+    // Calculate realized P&L per market
+    const usClosedPnL = closedPositions
+        .filter((p) => p.market === 'US')
+        .reduce((sum, p) => sum + p.pnl, 0);
+    const idClosedPnL = closedPositions
+        .filter((p) => p.market === 'ID')
+        .reduce((sum, p) => sum + p.pnl, 0);
 
     return (
         <div className="space-y-6">
-            {/* Currency Warning */}
-            {hasMixedCurrencies && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-sm text-yellow-400 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    <span>
-                        Your portfolio has both USD and IDR positions. Totals are shown as combined
-                        numeric values. For accurate accounting, consider tracking each currency
-                        separately.
-                    </span>
-                </div>
-            )}
-
-            {/* Summary Cards */}
+            {/* Overall Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Total Invested */}
+                {/* Total Positions */}
                 <div className="card">
                     <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="w-4 h-4 text-blue-400" />
-                        <p className="text-xs text-gray-500 font-medium">Total Invested</p>
+                        <BarChart3 className="w-4 h-4 text-blue-400" />
+                        <p className="text-xs text-gray-500 font-medium">Total Positions</p>
                     </div>
-                    <p className="text-xl font-bold text-white">
-                        {summary.totalInvested.toLocaleString('en-US', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                        })}
-                    </p>
-                </div>
-
-                {/* Current Value */}
-                <div className="card">
-                    <div className="flex items-center gap-2 mb-2">
-                        <BarChart3 className="w-4 h-4 text-purple-400" />
-                        <p className="text-xs text-gray-500 font-medium">Current Value</p>
-                    </div>
-                    <p className="text-xl font-bold text-white">
-                        {summary.totalCurrentValue.toLocaleString('en-US', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                        })}
-                    </p>
-                </div>
-
-                {/* Unrealized P&L */}
-                <div className="card">
-                    <div className="flex items-center gap-2 mb-2">
-                        {isProfit ? (
-                            <TrendingUp className="w-4 h-4 text-green-400" />
-                        ) : (
-                            <TrendingDown className="w-4 h-4 text-red-400" />
+                    <p className="text-2xl font-bold text-white">{summary.totalPositions}</p>
+                    <div className="flex gap-2 mt-1">
+                        {hasUSPositions && (
+                            <span className="text-xs text-gray-500">🇺🇸 {summary.us.positionCount}</span>
                         )}
-                        <p className="text-xs text-gray-500 font-medium">Unrealized P&L</p>
+                        {hasIDPositions && (
+                            <span className="text-xs text-gray-500">🇮🇩 {summary.id.positionCount}</span>
+                        )}
                     </div>
-                    <p className={`text-xl font-bold ${isProfit ? 'text-green-400' : 'text-red-400'}`}>
-                        {isProfit ? '+' : ''}
-                        {summary.totalPnL.toLocaleString('en-US', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                        })}
-                    </p>
-                    <p className={`text-sm ${isProfit ? 'text-green-500' : 'text-red-500'}`}>
-                        {isProfit ? '+' : ''}
-                        {summary.totalPnLPercent.toFixed(2)}%
-                    </p>
                 </div>
 
                 {/* Win Rate */}
                 <div className="card">
                     <div className="flex items-center gap-2 mb-2">
-                        <PieChart className="w-4 h-4 text-yellow-400" />
+                        <PieChart className="w-4 h-4 text-purple-400" />
                         <p className="text-xs text-gray-500 font-medium">Win Rate</p>
                     </div>
-                    <p className="text-xl font-bold text-white">{summary.winRate.toFixed(0)}%</p>
-                    <p className="text-sm text-gray-500">
-                        {watchlistItems.filter((i) => i.pnlPercent >= 0).length} of{' '}
-                        {watchlistItems.length} positions
+                    <p className="text-2xl font-bold text-white">
+                        {summary.overallWinRate.toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {summary.us.winnersCount + summary.id.winnersCount}W /{' '}
+                        {summary.us.losersCount + summary.id.losersCount}L
+                    </p>
+                </div>
+
+                {/* Realized P&L (US) */}
+                <div className="card">
+                    <div className="flex items-center gap-2 mb-2">
+                        <History className="w-4 h-4 text-yellow-400" />
+                        <p className="text-xs text-gray-500 font-medium">Realized P&L (US)</p>
+                    </div>
+                    <p
+                        className={
+                            'text-xl font-bold ' +
+                            (usClosedPnL >= 0 ? 'text-green-400' : 'text-red-400')
+                        }
+                    >
+                        {formatUSD(usClosedPnL, true)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {closedPositions.filter((p) => p.market === 'US').length} closed trades
+                    </p>
+                </div>
+
+                {/* Realized P&L (IDX) */}
+                <div className="card">
+                    <div className="flex items-center gap-2 mb-2">
+                        <History className="w-4 h-4 text-yellow-400" />
+                        <p className="text-xs text-gray-500 font-medium">Realized P&L (IDX)</p>
+                    </div>
+                    <p
+                        className={
+                            'text-xl font-bold ' +
+                            (idClosedPnL >= 0 ? 'text-green-400' : 'text-red-400')
+                        }
+                    >
+                        {formatIDR(idClosedPnL, true)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {closedPositions.filter((p) => p.market === 'ID').length} closed trades
                     </p>
                 </div>
             </div>
 
-            {/* Best / Worst + Realized P&L */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Best Performer */}
-                <div className="card">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Award className="w-4 h-4 text-green-400" />
-                        <p className="text-xs text-gray-500 font-medium">Best Performer</p>
-                    </div>
-                    {summary.bestPerformer ? (
-                        <div>
-                            <p className="text-lg font-bold text-white">{summary.bestPerformer.symbol}</p>
-                            <p className="text-sm text-green-400">
-                                +{summary.bestPerformer.pnlPercent.toFixed(2)}%
-                            </p>
-                        </div>
-                    ) : (
-                        <p className="text-sm text-gray-500">No positions yet</p>
-                    )}
-                </div>
+            {/* Per-Market P&L Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {(hasUSPositions || summary.us.positionCount > 0) && (
+                    <MarketPnLCard
+                        pnl={summary.us}
+                        realizedPnL={usClosedPnL}
+                        closedCount={closedPositions.filter((p) => p.market === 'US').length}
+                    />
+                )}
 
-                {/* Worst Performer */}
-                <div className="card">
-                    <div className="flex items-center gap-2 mb-2">
-                        <AlertTriangle className="w-4 h-4 text-red-400" />
-                        <p className="text-xs text-gray-500 font-medium">Worst Performer</p>
-                    </div>
-                    {summary.worstPerformer ? (
-                        <div>
-                            <p className="text-lg font-bold text-white">{summary.worstPerformer.symbol}</p>
-                            <p className="text-sm text-red-400">
-                                {summary.worstPerformer.pnlPercent.toFixed(2)}%
-                            </p>
-                        </div>
-                    ) : (
-                        <p className="text-sm text-gray-500">No positions yet</p>
-                    )}
-                </div>
+                {(hasIDPositions || summary.id.positionCount > 0) && (
+                    <MarketPnLCard
+                        pnl={summary.id}
+                        realizedPnL={idClosedPnL}
+                        closedCount={closedPositions.filter((p) => p.market === 'ID').length}
+                    />
+                )}
 
-                {/* Realized P&L */}
-                <div className="card">
-                    <div className="flex items-center gap-2 mb-2">
-                        <History className="w-4 h-4 text-blue-400" />
-                        <p className="text-xs text-gray-500 font-medium">Realized P&L</p>
+                {!hasUSPositions && !hasIDPositions && (
+                    <div className="lg:col-span-2 card text-center py-8">
+                        <BarChart3 className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                        <p className="text-gray-400">
+                            Add stocks to your watchlist to see portfolio performance here.
+                        </p>
                     </div>
-                    <p
-                        className={`text-lg font-bold ${summary.totalRealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'
-                            }`}
-                    >
-                        {summary.totalRealizedPnL >= 0 ? '+' : ''}
-                        {summary.totalRealizedPnL.toLocaleString('en-US', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                        })}
-                    </p>
-                    <p className="text-xs text-gray-500">{closedPositions.length} closed trades</p>
-                </div>
+                )}
             </div>
 
             {/* P&L History Chart */}
             <div className="card">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
                     <div className="flex items-center gap-2">
                         <BarChart3 className="w-5 h-5 text-blue-400" />
                         <h3 className="text-lg font-bold text-white">P&L History</h3>
                     </div>
 
-                    <div className="flex items-center gap-1 bg-dark-800 rounded-lg p-1">
-                        {([7, 30, 90, 365] as const).map((range) => (
-                            <button
-                                key={range}
-                                onClick={() => setTimeRange(range)}
-                                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${timeRange === range
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                {range === 7 ? '1W' : range === 30 ? '1M' : range === 90 ? '3M' : '1Y'}
-                            </button>
-                        ))}
+                    <div className="flex items-center gap-2">
+                        {/* Market Toggle */}
+                        {hasUSPositions && hasIDPositions && (
+                            <div className="flex items-center bg-dark-800 rounded-lg p-1 border border-dark-600">
+                                <button
+                                    onClick={() => setChartMarket('US')}
+                                    className={
+                                        'px-3 py-1 rounded-md text-xs font-semibold transition-all ' +
+                                        (chartMarket === 'US'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-400 hover:text-white')
+                                    }
+                                >
+                                    🇺🇸 USD
+                                </button>
+                                <button
+                                    onClick={() => setChartMarket('ID')}
+                                    className={
+                                        'px-3 py-1 rounded-md text-xs font-semibold transition-all ' +
+                                        (chartMarket === 'ID'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-400 hover:text-white')
+                                    }
+                                >
+                                    🇮🇩 IDR
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Time Range */}
+                        <div className="flex items-center bg-dark-800 rounded-lg p-1 border border-dark-600">
+                            {([7, 30, 90, 365] as const).map((range) => (
+                                <button
+                                    key={range}
+                                    onClick={() => setTimeRange(range)}
+                                    className={
+                                        'px-3 py-1 rounded-md text-xs font-medium transition-all ' +
+                                        (timeRange === range
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-400 hover:text-white')
+                                    }
+                                >
+                                    {range === 7 ? '1W' : range === 30 ? '1M' : range === 90 ? '3M' : '1Y'}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
+
+                <p className="text-xs text-gray-500 mb-3">
+                    Showing {chartMarket === 'US' ? '🇺🇸 US (USD)' : '🇮🇩 IDX (IDR)'} portfolio P&L
+                </p>
 
                 {chartData.length > 1 ? (
                     <div className="h-64">
@@ -283,13 +347,22 @@ export default function PortfolioDashboard() {
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a38" />
-                                <XAxis
-                                    dataKey="displayDate"
+                                <XAxis dataKey="displayDate" stroke="#666" fontSize={11} tickLine={false} />
+                                <YAxis
                                     stroke="#666"
                                     fontSize={11}
                                     tickLine={false}
+                                    tickFormatter={(value: number) => {
+                                        if (chartMarket === 'ID') {
+                                            if (Math.abs(value) >= 1000000)
+                                                return (value / 1000000).toFixed(1) + 'M';
+                                            if (Math.abs(value) >= 1000)
+                                                return (value / 1000).toFixed(0) + 'K';
+                                            return value.toString();
+                                        }
+                                        return value.toLocaleString();
+                                    }}
                                 />
-                                <YAxis stroke="#666" fontSize={11} tickLine={false} />
                                 <Tooltip
                                     contentStyle={{
                                         backgroundColor: '#1e1e28',
@@ -299,14 +372,21 @@ export default function PortfolioDashboard() {
                                     }}
                                     labelStyle={{ color: '#fff' }}
                                     formatter={(value: number, name: string) => {
-                                        if (name === 'pnlPercent') return [`${value.toFixed(2)}%`, 'P&L %'];
-                                        return [value.toLocaleString(), name === 'pnl' ? 'P&L' : name];
+                                        const prefix = chartMarket === 'ID' ? 'Rp' : '$';
+                                        if (name === 'pnlPercent') return [value.toFixed(2) + '%', 'P&L %'];
+                                        if (name === 'pnl')
+                                            return [prefix + value.toLocaleString(), 'P&L'];
+                                        if (name === 'totalValue')
+                                            return [prefix + value.toLocaleString(), 'Value'];
+                                        return [value.toLocaleString(), name];
                                     }}
                                 />
                                 <Area
                                     type="monotone"
                                     dataKey="pnl"
-                                    stroke={chartData[chartData.length - 1]?.pnl >= 0 ? '#22c55e' : '#ef4444'}
+                                    stroke={
+                                        chartData[chartData.length - 1]?.pnl >= 0 ? '#22c55e' : '#ef4444'
+                                    }
                                     strokeWidth={2}
                                     fill={
                                         chartData[chartData.length - 1]?.pnl >= 0
@@ -322,13 +402,17 @@ export default function PortfolioDashboard() {
                         <Calendar className="w-10 h-10 mb-3 opacity-30" />
                         <p className="text-sm">
                             {chartData.length === 1
-                                ? 'Need at least 2 days of data to show chart. Come back tomorrow!'
-                                : 'No snapshot data yet. Add stocks to your watchlist and refresh to start tracking.'}
+                                ? 'Need at least 2 days of data. Come back tomorrow!'
+                                : 'No ' +
+                                (chartMarket === 'US' ? 'US' : 'IDX') +
+                                ' snapshot data yet.'}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                            Visit daily to build your P&L history chart.
                         </p>
                     </div>
                 )}
 
-                {/* Snapshot count info */}
                 {snapshots.length > 0 && (
                     <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
                         <span>
@@ -349,7 +433,7 @@ export default function PortfolioDashboard() {
                 )}
             </div>
 
-            {/* Closed Positions History */}
+            {/* Closed Positions */}
             {closedPositions.length > 0 && (
                 <div className="card">
                     <div className="flex items-center justify-between mb-4">
@@ -369,52 +453,246 @@ export default function PortfolioDashboard() {
                         </button>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-xs text-gray-500 border-b border-dark-600">
-                                    <th className="text-left py-2 px-3">Symbol</th>
-                                    <th className="text-right py-2 px-3">Buy</th>
-                                    <th className="text-right py-2 px-3">Sell</th>
-                                    <th className="text-right py-2 px-3">Qty</th>
-                                    <th className="text-right py-2 px-3">P&L</th>
-                                    <th className="text-right py-2 px-3">Date</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {closedPositions
-                                    .slice()
-                                    .reverse()
-                                    .map((pos) => (
-                                        <tr key={pos.id} className="border-b border-dark-700 hover:bg-dark-800">
-                                            <td className="py-2.5 px-3 font-medium text-white">
-                                                {pos.symbol}{' '}
-                                                <span className="text-xs text-gray-500">
-                                                    {pos.market === 'ID' ? '🇮🇩' : '🇺🇸'}
-                                                </span>
-                                            </td>
-                                            <td className="py-2.5 px-3 text-right text-gray-400">
-                                                {pos.buyPrice.toLocaleString()}
-                                            </td>
-                                            <td className="py-2.5 px-3 text-right text-gray-400">
-                                                {pos.sellPrice.toLocaleString()}
-                                            </td>
-                                            <td className="py-2.5 px-3 text-right text-gray-400">{pos.quantity}</td>
-                                            <td
-                                                className={`py-2.5 px-3 text-right font-medium ${pos.pnl >= 0 ? 'text-green-400' : 'text-red-400'
-                                                    }`}
-                                            >
-                                                {pos.pnl >= 0 ? '+' : ''}
-                                                {pos.pnlPercent.toFixed(2)}%
-                                            </td>
-                                            <td className="py-2.5 px-3 text-right text-gray-500">{pos.sellDate}</td>
-                                        </tr>
-                                    ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    {closedPositions.some((p) => p.market === 'US') && (
+                        <ClosedPositionsTable
+                            positions={closedPositions.filter((p) => p.market === 'US')}
+                            market="US"
+                        />
+                    )}
+
+                    {closedPositions.some((p) => p.market === 'ID') && (
+                        <ClosedPositionsTable
+                            positions={closedPositions.filter((p) => p.market === 'ID')}
+                            market="ID"
+                        />
+                    )}
                 </div>
             )}
+        </div>
+    );
+}
+
+// ============================================================
+// Market P&L Card
+// ============================================================
+
+function MarketPnLCard({
+    pnl,
+    realizedPnL,
+    closedCount,
+}: {
+    pnl: MarketPnL;
+    realizedPnL: number;
+    closedCount: number;
+}) {
+    const isProfit = pnl.totalPnL >= 0;
+    const flag = pnl.market === 'US' ? '🇺🇸' : '🇮🇩';
+    const label = pnl.market === 'US' ? 'US Market' : 'Indonesian Market';
+
+    return (
+        <div className="card">
+            {/* Header */}
+            <div className="flex items-center gap-2 mb-4">
+                <span className="text-xl">{flag}</span>
+                <div>
+                    <h3 className="font-bold text-white">{label}</h3>
+                    <p className="text-xs text-gray-500">
+                        {pnl.positionCount} position{pnl.positionCount !== 1 ? 's' : ''} •{' '}
+                        {pnl.currency}
+                    </p>
+                </div>
+            </div>
+
+            {/* P&L Main */}
+            <div className="bg-dark-800 rounded-xl p-4 mb-4">
+                <div className="flex items-end justify-between">
+                    <div>
+                        <p className="text-xs text-gray-500 mb-1">Unrealized P&L</p>
+                        <p
+                            className={
+                                'text-2xl font-bold ' +
+                                (isProfit ? 'text-green-400' : 'text-red-400')
+                            }
+                        >
+                            {formatCurrency(pnl.totalPnL, pnl.market, true)}
+                        </p>
+                    </div>
+                    <div
+                        className={
+                            'flex items-center gap-1 text-sm font-bold ' +
+                            (isProfit ? 'text-green-400' : 'text-red-400')
+                        }
+                    >
+                        {isProfit ? (
+                            <ArrowUpRight className="w-4 h-4" />
+                        ) : (
+                            <ArrowDownRight className="w-4 h-4" />
+                        )}
+                        {isProfit ? '+' : ''}
+                        {pnl.totalPnLPercent.toFixed(2)}%
+                    </div>
+                </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-3">
+                <div className="bg-dark-800 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Invested</p>
+                    <p className="text-sm font-bold text-white">
+                        {formatCurrency(pnl.totalInvested, pnl.market)}
+                    </p>
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Current Value</p>
+                    <p className="text-sm font-bold text-white">
+                        {formatCurrency(pnl.totalCurrentValue, pnl.market)}
+                    </p>
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Win Rate</p>
+                    <p className="text-sm font-bold text-white">
+                        {pnl.winRate.toFixed(0)}%{' '}
+                        <span className="text-xs text-gray-500 font-normal">
+                            ({pnl.winnersCount}W / {pnl.losersCount}L)
+                        </span>
+                    </p>
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Realized P&L</p>
+                    <p
+                        className={
+                            'text-sm font-bold ' +
+                            (realizedPnL >= 0 ? 'text-green-400' : 'text-red-400')
+                        }
+                    >
+                        {formatCurrency(realizedPnL, pnl.market, true)}
+                    </p>
+                </div>
+            </div>
+
+            {/* Best / Worst */}
+            <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="bg-dark-800 rounded-xl p-3">
+                    <div className="flex items-center gap-1 mb-1">
+                        <Award className="w-3 h-3 text-green-400" />
+                        <p className="text-xs text-gray-500">Best</p>
+                    </div>
+                    {pnl.bestPerformer ? (
+                        <div>
+                            <p className="text-sm font-bold text-white">{pnl.bestPerformer.symbol}</p>
+                            <p className="text-xs text-green-400">
+                                +{pnl.bestPerformer.pnlPercent.toFixed(2)}%
+                            </p>
+                        </div>
+                    ) : (
+                        <p className="text-xs text-gray-600">—</p>
+                    )}
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3">
+                    <div className="flex items-center gap-1 mb-1">
+                        <AlertTriangle className="w-3 h-3 text-red-400" />
+                        <p className="text-xs text-gray-500">Worst</p>
+                    </div>
+                    {pnl.worstPerformer ? (
+                        <div>
+                            <p className="text-sm font-bold text-white">{pnl.worstPerformer.symbol}</p>
+                            <p className="text-xs text-red-400">
+                                {pnl.worstPerformer.pnlPercent.toFixed(2)}%
+                            </p>
+                        </div>
+                    ) : (
+                        <p className="text-xs text-gray-600">—</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// Closed Positions Table
+// ============================================================
+
+function ClosedPositionsTable({
+    positions,
+    market,
+}: {
+    positions: ClosedPosition[];
+    market: Market;
+}) {
+    const flag = market === 'US' ? '🇺🇸' : '🇮🇩';
+    const currency = market === 'ID' ? 'IDR' : 'USD';
+    const totalPnL = positions.reduce((sum, p) => sum + p.pnl, 0);
+
+    return (
+        <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-bold text-gray-400">
+                    {flag} {market === 'US' ? 'US' : 'IDX'} ({currency})
+                </h4>
+                <span
+                    className={
+                        'text-xs font-bold ' +
+                        (totalPnL >= 0 ? 'text-green-400' : 'text-red-400')
+                    }
+                >
+                    Total: {formatCurrency(totalPnL, market, true)}
+                </span>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className="text-xs text-gray-500 border-b border-dark-600">
+                            <th className="text-left py-2 px-3">Symbol</th>
+                            <th className="text-right py-2 px-3">Buy</th>
+                            <th className="text-right py-2 px-3">Sell</th>
+                            <th className="text-right py-2 px-3">Qty</th>
+                            <th className="text-right py-2 px-3">P&L</th>
+                            <th className="text-right py-2 px-3">P&L %</th>
+                            <th className="text-right py-2 px-3">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {positions
+                            .slice()
+                            .reverse()
+                            .map((pos) => (
+                                <tr key={pos.id} className="border-b border-dark-700 hover:bg-dark-800">
+                                    <td className="py-2.5 px-3 font-medium text-white">{pos.symbol}</td>
+                                    <td className="py-2.5 px-3 text-right text-gray-400">
+                                        {formatCurrency(pos.buyPrice, market)}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right text-gray-400">
+                                        {formatCurrency(pos.sellPrice, market)}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right text-gray-400">
+                                        {pos.quantity}
+                                        {market === 'ID' ? ' lot' : ''}
+                                    </td>
+                                    <td
+                                        className={
+                                            'py-2.5 px-3 text-right font-medium ' +
+                                            (pos.pnl >= 0 ? 'text-green-400' : 'text-red-400')
+                                        }
+                                    >
+                                        {formatCurrency(pos.pnl, market, true)}
+                                    </td>
+                                    <td
+                                        className={
+                                            'py-2.5 px-3 text-right font-medium ' +
+                                            (pos.pnlPercent >= 0 ? 'text-green-400' : 'text-red-400')
+                                        }
+                                    >
+                                        {pos.pnlPercent >= 0 ? '+' : ''}
+                                        {pos.pnlPercent.toFixed(2)}%
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right text-gray-500">{pos.sellDate}</td>
+                                </tr>
+                            ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }

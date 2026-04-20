@@ -4,54 +4,131 @@ import {
     PortfolioSnapshot,
     ClosedPosition,
     WatchlistItem,
+    Market,
+    MarketPnL,
     PortfolioSummary,
+    MarketSnapshotData,
 } from '@/types';
 
-interface PortfolioStore {
-    // Cash balance tracking
-    cashBalance: number;
-    setCashBalance: (amount: number) => void;
+function emptyMarketPnL(market: Market): MarketPnL {
+    return {
+        market,
+        currency: market === 'ID' ? 'IDR' : 'USD',
+        totalInvested: 0,
+        totalCurrentValue: 0,
+        totalPnL: 0,
+        totalPnLPercent: 0,
+        positionCount: 0,
+        winnersCount: 0,
+        losersCount: 0,
+        winRate: 0,
+        bestPerformer: null,
+        worstPerformer: null,
+    };
+}
 
-    // P&L History (daily snapshots)
+function emptyMarketSnapshot(): MarketSnapshotData {
+    return {
+        totalInvested: 0,
+        totalCurrentValue: 0,
+        totalPnL: 0,
+        totalPnLPercent: 0,
+        positionCount: 0,
+    };
+}
+
+function calculateMarketPnL(items: WatchlistItem[], market: Market): MarketPnL {
+    const filtered = items.filter((i) => i.market === market);
+
+    if (filtered.length === 0) return emptyMarketPnL(market);
+
+    let totalInvested = 0;
+    let totalCurrentValue = 0;
+    let winnersCount = 0;
+    let losersCount = 0;
+    let bestPerformer: { symbol: string; pnlPercent: number } | null = null;
+    let worstPerformer: { symbol: string; pnlPercent: number } | null = null;
+
+    for (const item of filtered) {
+        const multiplier = market === 'ID' ? 100 : 1;
+        const invested = item.buyPrice * item.quantity * multiplier;
+        const currentValue = item.currentPrice * item.quantity * multiplier;
+        const pnlPercent = ((item.currentPrice - item.buyPrice) / item.buyPrice) * 100;
+
+        totalInvested += invested;
+        totalCurrentValue += currentValue;
+
+        if (pnlPercent >= 0) winnersCount++;
+        else losersCount++;
+
+        if (!bestPerformer || pnlPercent > bestPerformer.pnlPercent) {
+            bestPerformer = { symbol: item.symbol, pnlPercent };
+        }
+        if (!worstPerformer || pnlPercent < worstPerformer.pnlPercent) {
+            worstPerformer = { symbol: item.symbol, pnlPercent };
+        }
+    }
+
+    const totalPnL = totalCurrentValue - totalInvested;
+    const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+
+    return {
+        market,
+        currency: market === 'ID' ? 'IDR' : 'USD',
+        totalInvested,
+        totalCurrentValue,
+        totalPnL,
+        totalPnLPercent,
+        positionCount: filtered.length,
+        winnersCount,
+        losersCount,
+        winRate: filtered.length > 0 ? (winnersCount / filtered.length) * 100 : 0,
+        bestPerformer,
+        worstPerformer,
+    };
+}
+
+interface PortfolioStore {
+    // P&L History
     snapshots: PortfolioSnapshot[];
     addSnapshot: (snapshot: PortfolioSnapshot) => void;
-    getSnapshotsByRange: (days: number) => PortfolioSnapshot[];
     clearSnapshots: () => void;
+    lastSnapshotDate: string | null;
 
-    // Closed positions (realized P&L)
+    // Closed positions
     closedPositions: ClosedPosition[];
     closePosition: (position: ClosedPosition) => void;
     clearClosedPositions: () => void;
 
-    // Summary calculation
+    // Actions
     calculateSummary: (watchlistItems: WatchlistItem[]) => PortfolioSummary;
-
-    // Take a snapshot from current watchlist state
     takeSnapshot: (watchlistItems: WatchlistItem[]) => void;
-
-    // Last snapshot date (prevent duplicates)
-    lastSnapshotDate: string | null;
+    getSnapshotsByRange: (days: number) => PortfolioSnapshot[];
 }
 
 export const usePortfolioStore = create<PortfolioStore>()(
     persist(
         (set, get) => ({
-            cashBalance: 0,
             snapshots: [],
             closedPositions: [],
             lastSnapshotDate: null,
 
-            setCashBalance: (amount) => set({ cashBalance: amount }),
-
             addSnapshot: (snapshot) =>
                 set((state) => {
-                    // Keep max 365 days of snapshots
                     const updated = [...state.snapshots, snapshot];
-                    if (updated.length > 365) {
-                        return { snapshots: updated.slice(-365), lastSnapshotDate: snapshot.date };
-                    }
-                    return { snapshots: updated, lastSnapshotDate: snapshot.date };
+                    // Keep max 365 snapshots
+                    const trimmed = updated.length > 365 ? updated.slice(-365) : updated;
+                    return { snapshots: trimmed, lastSnapshotDate: snapshot.date };
                 }),
+
+            clearSnapshots: () => set({ snapshots: [], lastSnapshotDate: null }),
+
+            closePosition: (position) =>
+                set((state) => ({
+                    closedPositions: [...state.closedPositions, position],
+                })),
+
+            clearClosedPositions: () => set({ closedPositions: [] }),
 
             getSnapshotsByRange: (days) => {
                 const cutoff = new Date();
@@ -60,72 +137,34 @@ export const usePortfolioStore = create<PortfolioStore>()(
                 return get().snapshots.filter((s) => s.date >= cutoffStr);
             },
 
-            clearSnapshots: () => set({ snapshots: [], lastSnapshotDate: null }),
-
-            closePosition: (position) =>
-                set((state) => ({
-                    closedPositions: [...state.closedPositions, position],
-                    cashBalance: state.cashBalance + position.sellPrice * position.quantity * (position.market === 'ID' ? 100 : 1),
-                })),
-
-            clearClosedPositions: () => set({ closedPositions: [] }),
-
             calculateSummary: (watchlistItems: WatchlistItem[]): PortfolioSummary => {
                 const state = get();
 
-                if (watchlistItems.length === 0) {
-                    return {
-                        totalInvested: 0,
-                        totalCurrentValue: 0,
-                        totalPnL: 0,
-                        totalPnLPercent: 0,
-                        totalRealizedPnL: state.closedPositions.reduce((sum, p) => sum + p.pnl, 0),
-                        bestPerformer: null,
-                        worstPerformer: null,
-                        winRate: 0,
-                    };
-                }
+                const usPnL = calculateMarketPnL(watchlistItems, 'US');
+                const idPnL = calculateMarketPnL(watchlistItems, 'ID');
 
-                let totalInvested = 0;
-                let totalCurrentValue = 0;
-                let bestPerformer: { symbol: string; pnlPercent: number } | null = null;
-                let worstPerformer: { symbol: string; pnlPercent: number } | null = null;
-                let winnersCount = 0;
+                const usClosedPnL = state.closedPositions
+                    .filter((p) => p.market === 'US')
+                    .reduce((sum, p) => sum + p.pnl, 0);
 
-                for (const item of watchlistItems) {
-                    const multiplier = item.market === 'ID' ? 100 : 1; // lots vs shares
-                    const invested = item.buyPrice * item.quantity * multiplier;
-                    const currentValue = item.currentPrice * item.quantity * multiplier;
-                    const pnlPercent = ((item.currentPrice - item.buyPrice) / item.buyPrice) * 100;
+                const idClosedPnL = state.closedPositions
+                    .filter((p) => p.market === 'ID')
+                    .reduce((sum, p) => sum + p.pnl, 0);
 
-                    totalInvested += invested;
-                    totalCurrentValue += currentValue;
-
-                    if (pnlPercent >= 0) winnersCount++;
-
-                    if (!bestPerformer || pnlPercent > bestPerformer.pnlPercent) {
-                        bestPerformer = { symbol: item.symbol, pnlPercent };
-                    }
-                    if (!worstPerformer || pnlPercent < worstPerformer.pnlPercent) {
-                        worstPerformer = { symbol: item.symbol, pnlPercent };
-                    }
-                }
-
-                const totalPnL = totalCurrentValue - totalInvested;
-                const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
-                const totalRealizedPnL = state.closedPositions.reduce((sum, p) => sum + p.pnl, 0);
-                const winRate =
-                    watchlistItems.length > 0 ? (winnersCount / watchlistItems.length) * 100 : 0;
+                const totalPositions = watchlistItems.length;
+                const totalWinners = usPnL.winnersCount + idPnL.winnersCount;
+                const overallWinRate =
+                    totalPositions > 0 ? (totalWinners / totalPositions) * 100 : 0;
 
                 return {
-                    totalInvested,
-                    totalCurrentValue,
-                    totalPnL,
-                    totalPnLPercent,
-                    totalRealizedPnL,
-                    bestPerformer,
-                    worstPerformer,
-                    winRate,
+                    us: usPnL,
+                    id: idPnL,
+                    totalPositions,
+                    totalRealizedPnL: {
+                        us: usClosedPnL,
+                        id: idClosedPnL,
+                    },
+                    overallWinRate,
                 };
             },
 
@@ -133,9 +172,7 @@ export const usePortfolioStore = create<PortfolioStore>()(
                 const state = get();
                 const today = new Date().toISOString().split('T')[0];
 
-                // Only one snapshot per day
                 if (state.lastSnapshotDate === today) return;
-
                 if (watchlistItems.length === 0) return;
 
                 const positions = watchlistItems.map((item) => {
@@ -155,18 +192,29 @@ export const usePortfolioStore = create<PortfolioStore>()(
                     };
                 });
 
-                const totalInvested = positions.reduce((sum, p) => sum + p.invested, 0);
-                const totalCurrentValue = positions.reduce((sum, p) => sum + p.currentValue, 0);
-                const totalPnL = totalCurrentValue - totalInvested;
+                // Calculate per-market totals
+                function marketSnapshot(market: Market): MarketSnapshotData {
+                    const filtered = positions.filter((p) => p.market === market);
+                    if (filtered.length === 0) return emptyMarketSnapshot();
+
+                    const totalInvested = filtered.reduce((s, p) => s + p.invested, 0);
+                    const totalCurrentValue = filtered.reduce((s, p) => s + p.currentValue, 0);
+                    const totalPnL = totalCurrentValue - totalInvested;
+
+                    return {
+                        totalInvested,
+                        totalCurrentValue,
+                        totalPnL,
+                        totalPnLPercent: totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0,
+                        positionCount: filtered.length,
+                    };
+                }
 
                 const snapshot: PortfolioSnapshot = {
                     date: today,
                     timestamp: new Date().toISOString(),
-                    totalInvested,
-                    totalCurrentValue,
-                    totalPnL,
-                    totalPnLPercent: totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0,
-                    cashBalance: state.cashBalance,
+                    us: marketSnapshot('US'),
+                    id: marketSnapshot('ID'),
                     positions,
                 };
 
