@@ -62,13 +62,15 @@ class MemoryCache {
 }
 
 // Singleton instances with different TTLs
-export const quoteCache = new MemoryCache();   // For stock quotes
-export const historyCache = new MemoryCache(); // For historical data
-export const searchCache = new MemoryCache();  // For search results
+export const quoteCache = new MemoryCache();          // For stock quotes
+export const historyCache = new MemoryCache();        // For historical data
+export const searchCache = new MemoryCache();         // For search results
+export const fundamentalsCache = new MemoryCache();   // For fundamental data (screener)
 
 // TTL constants (in seconds)
 export const CACHE_TTL = {
-  QUOTE: 5 * 60,        // 5 minutes
-  HISTORICAL: 60 * 60,  // 1 hour
-  SEARCH: 10 * 60,      // 10 minutes
+  QUOTE: 5 * 60,           // 5 minutes
+  HISTORICAL: 60 * 60,     // 1 hour
+  SEARCH: 10 * 60,         // 10 minutes
+  FUNDAMENTALS: 30 * 60,   // 30 minutes
 };

@@ -1,5 +1,6 @@
 import { StockQuote, HistoricalData, Market, PopularStock } from '@/types';
-import { quoteCache, historyCache, searchCache, CACHE_TTL } from './cache';
+import { FundamentalData } from '@/types/screener';
+import { quoteCache, historyCache, searchCache, fundamentalsCache, CACHE_TTL } from './cache';
 import { yahooLimiter, twelveDataLimiter } from './rateLimiter';
 
 // ============================================================
@@ -159,6 +160,532 @@ export async function searchStocks(
 
   searchCache.set(cacheKey, results, CACHE_TTL.SEARCH);
   return results;
+}
+
+// ============================================================
+// FUNDAMENTAL DATA (for Screener)
+// Uses Yahoo quoteSummary v10 API with multiple modules
+// ============================================================
+
+export async function getStockFundamentals(
+  symbol: string,
+  market: Market
+): Promise<FundamentalData> {
+  const clean = cleanSymbol(symbol);
+  const cacheKey = `fundamentals:${clean}:${market}`;
+
+  const cached = fundamentalsCache.get<FundamentalData>(cacheKey);
+  if (cached) {
+    console.log(`[Cache HIT] Fundamentals: ${clean} (${market})`);
+    return cached;
+  }
+
+  const ySymbol = yahooSymbol(clean, market);
+  console.log(`[Yahoo] Fundamentals: ${ySymbol}`);
+
+  const modules = [
+    'defaultKeyStatistics',
+    'financialData',
+    'summaryDetail',
+    'earningsTrend',
+  ].join(',');
+
+  const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${ySymbol}?modules=${modules}`;
+
+  try {
+    const data = await yahooFetch(url);
+    const result = data?.quoteSummary?.result?.[0];
+
+    if (!result) {
+      throw new Error(`No fundamentals data for ${ySymbol}`);
+    }
+
+    const keyStats = result.defaultKeyStatistics || {};
+    const financials = result.financialData || {};
+    const summary = result.summaryDetail || {};
+    const earningsTrend = result.earningsTrend?.trend || [];
+
+    // Helper to extract raw value from Yahoo's nested format
+    const raw = (obj: any): number | null => {
+      if (obj == null) return null;
+      if (typeof obj === 'number') return obj;
+      if (typeof obj === 'object' && 'raw' in obj) return obj.raw;
+      return null;
+    };
+
+    // Extract EPS growth from earningsTrend
+    let epsGrowthCurrentYear: number | null = null;
+    let epsGrowthNext5Y: number | null = null;
+
+    for (const trend of earningsTrend) {
+      const period = trend.period;
+      const growth = raw(trend.growth);
+      if (period === '0y' && growth !== null) {
+        epsGrowthCurrentYear = growth * 100; // convert to %
+      }
+      if (period === '+5y' && growth !== null) {
+        epsGrowthNext5Y = growth * 100;
+      }
+    }
+
+    const fundamentals: FundamentalData = {
+      symbol: clean,
+      name:
+        IDX_FULL_LIST.find((s) => s.symbol === clean)?.name ||
+        POPULAR_STOCKS.find((s) => s.symbol === clean)?.name ||
+        clean,
+      market,
+      currency: market === 'ID' ? 'IDR' : 'USD',
+
+      // Valuation
+      peRatio: raw(summary.trailingPE) ?? raw(keyStats.trailingPE),
+      forwardPE: raw(summary.forwardPE) ?? raw(keyStats.forwardPE),
+      pbRatio: raw(summary.priceToBook) ?? raw(keyStats.priceToBook),
+      psRatio: raw(summary.priceToSalesTrailing12Months),
+      pegRatio: raw(keyStats.pegRatio),
+      evToEbitda: raw(keyStats.enterpriseToEbitda),
+
+      // Profitability
+      roe: raw(financials.returnOnEquity) !== null ? (raw(financials.returnOnEquity)! * 100) : null,
+      roa: raw(financials.returnOnAssets) !== null ? (raw(financials.returnOnAssets)! * 100) : null,
+      netProfitMargin: raw(financials.profitMargins) !== null ? (raw(financials.profitMargins)! * 100) : null,
+      grossMargin: raw(financials.grossMargins) !== null ? (raw(financials.grossMargins)! * 100) : null,
+      operatingMargin: raw(financials.operatingMargins) !== null ? (raw(financials.operatingMargins)! * 100) : null,
+
+      // Growth
+      revenueGrowth: raw(financials.revenueGrowth) !== null ? (raw(financials.revenueGrowth)! * 100) : null,
+      earningsGrowth: raw(financials.earningsGrowth) !== null ? (raw(financials.earningsGrowth)! * 100) : null,
+      epsGrowthCurrentYear,
+      epsGrowthNext5Y,
+
+      // Financial Health
+      debtToEquity: raw(financials.debtToEquity) !== null ? (raw(financials.debtToEquity)! / 100) : null,
+      currentRatio: raw(financials.currentRatio),
+      freeCashFlow: raw(financials.freeCashflow),
+
+      // Income & Size
+      dividendYield: raw(summary.dividendYield) !== null ? (raw(summary.dividendYield)! * 100) : null,
+      payoutRatio: raw(summary.payoutRatio) !== null ? (raw(summary.payoutRatio)! * 100) : null,
+      marketCap: raw(summary.marketCap),
+
+      // Trading
+      avgVolume3M: raw(summary.averageVolume),
+      high52Week: raw(summary.fiftyTwoWeekHigh),
+      low52Week: raw(summary.fiftyTwoWeekLow),
+      beta: raw(summary.beta) ?? raw(keyStats.beta),
+
+      // Price
+      price: raw(financials.currentPrice),
+    };
+
+    fundamentalsCache.set(cacheKey, fundamentals, CACHE_TTL.FUNDAMENTALS);
+    return fundamentals;
+  } catch (error: any) {
+    console.error(`[Yahoo] Fundamentals failed for ${ySymbol}: ${error.message}`);
+    throw error;
+  }
+}
+
+// ============================================================
+// COMPREHENSIVE ANALYSIS (for Module 2: Fundamental Dashboard)
+// Fetches all financial data in a single Yahoo quoteSummary call
+// ============================================================
+
+import {
+  ComprehensiveAnalysis,
+  CompanyProfile,
+  AnnualFinancials,
+  AnnualBalanceSheet,
+  AnnualCashFlow,
+  DividendInfo,
+  PeerData,
+} from '@/types/analysis';
+
+export async function getComprehensiveAnalysis(
+  symbol: string,
+  market: Market
+): Promise<ComprehensiveAnalysis> {
+  const clean = cleanSymbol(symbol);
+  const cacheKey = `analysis:${clean}:${market}`;
+
+  const cached = fundamentalsCache.get<ComprehensiveAnalysis>(cacheKey);
+  if (cached) {
+    console.log(`[Cache HIT] Analysis: ${clean} (${market})`);
+    return cached;
+  }
+
+  const ySymbol = yahooSymbol(clean, market);
+  console.log(`[Yahoo] Comprehensive Analysis: ${ySymbol}`);
+
+  const modules = [
+    'assetProfile',
+    'defaultKeyStatistics',
+    'financialData',
+    'summaryDetail',
+    'earningsTrend',
+    'incomeStatementHistory',
+    'balanceSheetHistory',
+    'cashflowStatementHistory',
+    'calendarEvents',
+    'recommendationTrend',
+  ].join(',');
+
+  const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${ySymbol}?modules=${modules}`;
+  const data = await yahooFetch(url);
+  const result = data?.quoteSummary?.result?.[0];
+
+  if (!result) {
+    throw new Error(`No analysis data for ${ySymbol}`);
+  }
+
+  // Helper
+  const raw = (obj: any): number | null => {
+    if (obj == null) return null;
+    if (typeof obj === 'number') return obj;
+    if (typeof obj === 'object' && 'raw' in obj) return obj.raw;
+    return null;
+  };
+
+  const fmtDate = (obj: any): string => {
+    if (!obj) return '';
+    const r = raw(obj);
+    if (r && typeof r === 'number') return new Date(r * 1000).toISOString().split('T')[0];
+    if (typeof obj === 'string') return obj;
+    if (obj.fmt) return obj.fmt;
+    return '';
+  };
+
+  // ---- Parse Asset Profile ----
+  const ap = result.assetProfile || {};
+  const profile: CompanyProfile = {
+    name: ap.longName || ap.shortName || clean,
+    symbol: clean,
+    market,
+    sector: ap.sector || 'Unknown',
+    industry: ap.industry || 'Unknown',
+    description: ap.longBusinessSummary || '',
+    website: ap.website || '',
+    officers: (ap.companyOfficers || []).slice(0, 5).map((o: any) => ({
+      name: o.name || '',
+      title: o.title || '',
+      age: o.age || undefined,
+    })),
+    address: [ap.address1, ap.city, ap.state, ap.country].filter(Boolean).join(', '),
+    country: ap.country || '',
+    employeeCount: raw(ap.fullTimeEmployees),
+  };
+
+  // ---- Parse Key Stats + Financial Data + Summary Detail ----
+  const keyStats = result.defaultKeyStatistics || {};
+  const financials = result.financialData || {};
+  const summary = result.summaryDetail || {};
+  const earningsTrend = result.earningsTrend?.trend || [];
+
+  // Build FundamentalData (reuse existing logic)
+  let epsGrowthCurrentYear: number | null = null;
+  let epsGrowthNext5Y: number | null = null;
+  for (const trend of earningsTrend) {
+    const growth = raw(trend.growth);
+    if (trend.period === '0y' && growth !== null) epsGrowthCurrentYear = growth * 100;
+    if (trend.period === '+5y' && growth !== null) epsGrowthNext5Y = growth * 100;
+  }
+
+  const fundamentalData: FundamentalData = {
+    symbol: clean,
+    name: profile.name,
+    market,
+    currency: market === 'ID' ? 'IDR' : 'USD',
+    peRatio: raw(summary.trailingPE) ?? raw(keyStats.trailingPE),
+    forwardPE: raw(summary.forwardPE) ?? raw(keyStats.forwardPE),
+    pbRatio: raw(summary.priceToBook) ?? raw(keyStats.priceToBook),
+    psRatio: raw(summary.priceToSalesTrailing12Months),
+    pegRatio: raw(keyStats.pegRatio),
+    evToEbitda: raw(keyStats.enterpriseToEbitda),
+    roe: raw(financials.returnOnEquity) !== null ? raw(financials.returnOnEquity)! * 100 : null,
+    roa: raw(financials.returnOnAssets) !== null ? raw(financials.returnOnAssets)! * 100 : null,
+    netProfitMargin: raw(financials.profitMargins) !== null ? raw(financials.profitMargins)! * 100 : null,
+    grossMargin: raw(financials.grossMargins) !== null ? raw(financials.grossMargins)! * 100 : null,
+    operatingMargin: raw(financials.operatingMargins) !== null ? raw(financials.operatingMargins)! * 100 : null,
+    revenueGrowth: raw(financials.revenueGrowth) !== null ? raw(financials.revenueGrowth)! * 100 : null,
+    earningsGrowth: raw(financials.earningsGrowth) !== null ? raw(financials.earningsGrowth)! * 100 : null,
+    epsGrowthCurrentYear,
+    epsGrowthNext5Y,
+    debtToEquity: raw(financials.debtToEquity) !== null ? raw(financials.debtToEquity)! / 100 : null,
+    currentRatio: raw(financials.currentRatio),
+    freeCashFlow: raw(financials.freeCashflow),
+    dividendYield: raw(summary.dividendYield) !== null ? raw(summary.dividendYield)! * 100 : null,
+    payoutRatio: raw(summary.payoutRatio) !== null ? raw(summary.payoutRatio)! * 100 : null,
+    marketCap: raw(summary.marketCap),
+    avgVolume3M: raw(summary.averageVolume),
+    high52Week: raw(summary.fiftyTwoWeekHigh),
+    low52Week: raw(summary.fiftyTwoWeekLow),
+    beta: raw(summary.beta) ?? raw(keyStats.beta),
+    price: raw(financials.currentPrice),
+  };
+
+  // ---- Parse Income Statements ----
+  const incomeStatements: AnnualFinancials[] = (
+    result.incomeStatementHistory?.incomeStatementHistory || []
+  ).map((stmt: any) => {
+    const rev = raw(stmt.totalRevenue);
+    const gp = raw(stmt.grossProfit);
+    const oi = raw(stmt.operatingIncome);
+    const ni = raw(stmt.netIncome);
+    return {
+      year: fmtDate(stmt.endDate)?.slice(0, 4) || '',
+      endDate: fmtDate(stmt.endDate),
+      totalRevenue: rev,
+      grossProfit: gp,
+      operatingIncome: oi,
+      netIncome: ni,
+      ebit: raw(stmt.ebit) ?? oi,
+      eps: raw(stmt.dilutedEPS),
+      interestExpense: raw(stmt.interestExpense),
+      grossMargin: rev && gp ? (gp / rev) * 100 : null,
+      operatingMargin: rev && oi ? (oi / rev) * 100 : null,
+      netMargin: rev && ni ? (ni / rev) * 100 : null,
+    };
+  }).sort((a: AnnualFinancials, b: AnnualFinancials) => a.year.localeCompare(b.year));
+
+  // ---- Parse Balance Sheets ----
+  const balanceSheets: AnnualBalanceSheet[] = (
+    result.balanceSheetHistory?.balanceSheetStatements || []
+  ).map((stmt: any) => {
+    const ta = raw(stmt.totalAssets);
+    const tl = raw(stmt.totalLiab);
+    const te = raw(stmt.totalStockholderEquity);
+    const td = raw(stmt.totalDebt) ?? raw(stmt.longTermDebt);
+    const ca = raw(stmt.totalCurrentAssets);
+    const cl = raw(stmt.totalCurrentLiabilities);
+    const cash = raw(stmt.cash) ?? raw(stmt.cashAndCashEquivalents);
+    const std = raw(stmt.shortTermDebt) ?? raw(stmt.currentDebt) ?? raw(stmt.shortLongTermDebt);
+    const ltd = raw(stmt.longTermDebt);
+    const inv = raw(stmt.inventory);
+
+    return {
+      year: fmtDate(stmt.endDate)?.slice(0, 4) || '',
+      endDate: fmtDate(stmt.endDate),
+      totalAssets: ta,
+      totalLiabilities: tl,
+      totalEquity: te,
+      totalDebt: td,
+      shortTermDebt: std,
+      longTermDebt: ltd,
+      currentAssets: ca,
+      currentLiabilities: cl,
+      cash,
+      goodwill: raw(stmt.goodWill),
+      debtToEquity: td != null && te != null && te > 0 ? td / te : null,
+      currentRatio: ca != null && cl != null && cl > 0 ? ca / cl : null,
+      quickRatio: ca != null && cl != null && inv != null && cl > 0 ? (ca - inv) / cl : null,
+    };
+  }).sort((a: AnnualBalanceSheet, b: AnnualBalanceSheet) => a.year.localeCompare(b.year));
+
+  // ---- Parse Cash Flow Statements ----
+  const cashFlowStatements: AnnualCashFlow[] = (
+    result.cashflowStatementHistory?.cashflowStatements || []
+  ).map((stmt: any) => {
+    const ocf = raw(stmt.totalCashFromOperatingActivities);
+    const capex = raw(stmt.capitalExpenditures); // usually negative
+    const capexAbs = capex != null ? Math.abs(capex) : null;
+    return {
+      year: fmtDate(stmt.endDate)?.slice(0, 4) || '',
+      endDate: fmtDate(stmt.endDate),
+      operatingCashFlow: ocf,
+      capitalExpenditure: capexAbs,
+      freeCashFlow: ocf != null && capexAbs != null ? ocf - capexAbs : null,
+      dividendsPaid: raw(stmt.dividendsPaid) != null ? Math.abs(raw(stmt.dividendsPaid)!) : null,
+    };
+  }).sort((a: AnnualCashFlow, b: AnnualCashFlow) => a.year.localeCompare(b.year));
+
+  // ---- Dividend Info ----
+  const calEvents = result.calendarEvents || {};
+  const dividendInfo: DividendInfo = {
+    dividendYield: fundamentalData.dividendYield,
+    dividendRate: raw(summary.dividendRate),
+    payoutRatio: fundamentalData.payoutRatio,
+    exDividendDate: fmtDate(summary.exDividendDate) || null,
+    dividendDate: fmtDate(calEvents.dividendDate) || null,
+    fiveYearAvgDividendYield: raw(summary.fiveYearAvgDividendYield),
+  };
+
+  // ---- Analyst Recommendations ----
+  const recTrends = result.recommendationTrend?.trend || [];
+  const latestRec = recTrends[0] || {};
+  const analystRating = {
+    buy: (raw(latestRec.strongBuy) || 0) + (raw(latestRec.buy) || 0),
+    hold: raw(latestRec.hold) || 0,
+    sell: (raw(latestRec.sell) || 0) + (raw(latestRec.strongSell) || 0),
+    targetMeanPrice: raw(financials.targetMeanPrice),
+    targetHighPrice: raw(financials.targetHighPrice),
+    targetLowPrice: raw(financials.targetLowPrice),
+  };
+
+  // ---- Compute CAGRs ----
+  const computeCAGR = (values: (number | null)[], years: number): number | null => {
+    if (values.length < 2) return null;
+    const startIdx = Math.max(0, values.length - years - 1);
+    const endIdx = values.length - 1;
+    const start = values[startIdx];
+    const end = values[endIdx];
+    const n = endIdx - startIdx;
+    if (start == null || end == null || start <= 0 || n <= 0) return null;
+    return (Math.pow(end / start, 1 / n) - 1) * 100;
+  };
+
+  const revenues = incomeStatements.map((s) => s.totalRevenue);
+  const epsValues = incomeStatements.map((s) => s.eps);
+
+  // ---- Compute derived metrics ----
+  const latestCF = cashFlowStatements[cashFlowStatements.length - 1];
+  const latestIncome = incomeStatements[incomeStatements.length - 1];
+
+  const fcfMargin = latestCF?.freeCashFlow != null && latestIncome?.totalRevenue != null && latestIncome.totalRevenue > 0
+    ? (latestCF.freeCashFlow / latestIncome.totalRevenue) * 100
+    : null;
+
+  const fcfYield = latestCF?.freeCashFlow != null && fundamentalData.marketCap != null && fundamentalData.marketCap > 0
+    ? (latestCF.freeCashFlow / fundamentalData.marketCap) * 100
+    : null;
+
+  const interestCoverage = latestIncome?.ebit != null && latestIncome?.interestExpense != null && latestIncome.interestExpense !== 0
+    ? Math.abs(latestIncome.ebit / latestIncome.interestExpense)
+    : null;
+
+  const latestBS = balanceSheets[balanceSheets.length - 1];
+  const latestDebt = latestBS?.totalDebt;
+  // debtToEbitda: use the latest EBITDA proxy (operating income since we don't have D&A)
+  const debtToEbitda = latestDebt != null && latestIncome?.operatingIncome != null && latestIncome.operatingIncome > 0
+    ? latestDebt / latestIncome.operatingIncome
+    : null;
+
+  const analysis: ComprehensiveAnalysis = {
+    profile,
+    fundamentals: fundamentalData,
+    enterpriseValue: raw(keyStats.enterpriseValue),
+    financials: incomeStatements,
+    balanceSheets,
+    cashFlows: cashFlowStatements,
+    dividend: dividendInfo,
+    analystRating,
+    cagr: {
+      revenue3Y: computeCAGR(revenues, 3),
+      revenue5Y: computeCAGR(revenues, 5),
+      eps3Y: computeCAGR(epsValues, 3),
+      eps5Y: computeCAGR(epsValues, 5),
+    },
+    fcfMargin,
+    fcfYield,
+    interestCoverage,
+    debtToEbitda,
+  };
+
+  fundamentalsCache.set(cacheKey, analysis, CACHE_TTL.FUNDAMENTALS);
+  return analysis;
+}
+
+// ============================================================
+// PEER ANALYSIS
+// Finds 4-6 stocks in same sector and fetches their fundamentals
+// ============================================================
+
+// Sector mapping for IDX stocks (for peer comparison)
+const IDX_SECTOR_MAP: Record<string, string> = {
+  // Banking
+  BBCA: 'Financial', BBRI: 'Financial', BMRI: 'Financial', BBNI: 'Financial',
+  BRIS: 'Financial', BTPS: 'Financial', MEGA: 'Financial', NISP: 'Financial',
+  BNGA: 'Financial', BDMN: 'Financial', ARTO: 'Financial', BBYB: 'Financial',
+  BNLI: 'Financial', BTPN: 'Financial', BJTM: 'Financial', BJBR: 'Financial',
+  ADMF: 'Financial', BBLD: 'Financial', PNLF: 'Financial', LIFE: 'Financial',
+  // Mining & Energy
+  ADRO: 'Energy', ITMG: 'Energy', PTBA: 'Energy', ANTM: 'Energy',
+  INCO: 'Energy', MDKA: 'Energy', MEDC: 'Energy', PGAS: 'Energy',
+  ESSA: 'Energy', HRUM: 'Energy', TINS: 'Energy', BSSR: 'Energy',
+  DSSA: 'Energy', MBAP: 'Energy', GEMS: 'Energy', UNTR: 'Energy',
+  ADMR: 'Energy', PGEO: 'Energy', ELSA: 'Energy',
+  // Telco & Tech
+  TLKM: 'Technology', EXCL: 'Technology', ISAT: 'Technology',
+  EMTK: 'Technology', TOWR: 'Technology', TBIG: 'Technology',
+  GOTO: 'Technology', BUKA: 'Technology', DCII: 'Technology', MTDL: 'Technology',
+  // Consumer
+  ASII: 'Consumer Cyclical', UNVR: 'Consumer Defensive', HMSP: 'Consumer Defensive',
+  ICBP: 'Consumer Defensive', INDF: 'Consumer Defensive', KLBF: 'Healthcare',
+  GGRM: 'Consumer Defensive', MYOR: 'Consumer Defensive', CPIN: 'Consumer Defensive',
+  SIDO: 'Consumer Defensive', ACES: 'Consumer Cyclical', AMRT: 'Consumer Defensive',
+  MAPI: 'Consumer Cyclical', ERAA: 'Consumer Cyclical', LPPF: 'Consumer Cyclical',
+  HERO: 'Consumer Defensive', RALS: 'Consumer Cyclical', JPFA: 'Consumer Defensive',
+  MAIN: 'Consumer Defensive', CLEO: 'Consumer Defensive', AUTO: 'Consumer Cyclical',
+  // Property & Construction
+  BSDE: 'Real Estate', CTRA: 'Real Estate', SMRA: 'Real Estate',
+  PWON: 'Real Estate', WIKA: 'Industrials', PTPP: 'Industrials',
+  WSKT: 'Industrials', JSMR: 'Industrials', DILD: 'Real Estate',
+  LPKR: 'Real Estate', APLN: 'Real Estate', SMGR: 'Industrials',
+  // Industrial
+  INKP: 'Industrials', TKIM: 'Industrials', BRPT: 'Industrials',
+  TPIA: 'Industrials', IMPC: 'Industrials', SRIL: 'Industrials',
+  // Healthcare
+  HEAL: 'Healthcare', MIKA: 'Healthcare', SILO: 'Healthcare',
+  PRDA: 'Healthcare', DVLA: 'Healthcare',
+  // Plantation
+  AALI: 'Consumer Defensive', LSIP: 'Consumer Defensive', DSNG: 'Consumer Defensive',
+  TAPG: 'Consumer Defensive',
+  // Media
+  SCMA: 'Communication Services', MNCN: 'Communication Services',
+  // Others
+  AKRA: 'Energy', GIAA: 'Industrials',
+};
+
+export async function getPeerAnalysis(
+  sector: string,
+  market: Market,
+  excludeSymbol: string,
+  maxPeers: number = 5
+): Promise<PeerData[]> {
+  const clean = cleanSymbol(excludeSymbol);
+
+  // Find peer symbols in the same sector
+  let peerSymbols: string[] = [];
+
+  if (market === 'ID') {
+    // Use IDX_SECTOR_MAP
+    peerSymbols = Object.entries(IDX_SECTOR_MAP)
+      .filter(([sym, sec]) => sec === sector && sym !== clean)
+      .map(([sym]) => sym);
+  } else {
+    // Use POPULAR_STOCKS for US
+    peerSymbols = POPULAR_STOCKS
+      .filter((s) => s.market === 'US' && s.sector === sector && s.symbol !== clean)
+      .map((s) => s.symbol);
+  }
+
+  // Limit to maxPeers
+  peerSymbols = peerSymbols.slice(0, maxPeers);
+
+  if (peerSymbols.length === 0) return [];
+
+  const peers: PeerData[] = [];
+
+  for (const sym of peerSymbols) {
+    try {
+      const fund = await getStockFundamentals(sym, market);
+      peers.push({
+        symbol: fund.symbol,
+        name: fund.name,
+        peRatio: fund.peRatio,
+        pbRatio: fund.pbRatio,
+        roe: fund.roe,
+        netProfitMargin: fund.netProfitMargin,
+        revenueGrowth: fund.revenueGrowth,
+        debtToEquity: fund.debtToEquity,
+        dividendYield: fund.dividendYield,
+        marketCap: fund.marketCap,
+      });
+    } catch (err: any) {
+      console.warn(`[Peer] Failed to fetch ${sym}: ${err.message}`);
+    }
+  }
+
+  return peers;
 }
 
 // ============================================================
@@ -745,3 +1272,12 @@ export const POPULAR_STOCKS: PopularStock[] = [
   { symbol: 'KLBF', name: 'Kalbe Farma', market: 'ID', sector: 'Healthcare' },
   { symbol: 'ITMG', name: 'Indo Tambangraya Megah', market: 'ID', sector: 'Energy' },
 ];
+
+// Export stock universes for the screener
+export const SCREENER_UNIVERSE = {
+  US: POPULAR_STOCKS.filter((s) => s.market === 'US').map((s) => ({
+    symbol: s.symbol,
+    name: s.name,
+  })),
+  ID: IDX_FULL_LIST,
+};

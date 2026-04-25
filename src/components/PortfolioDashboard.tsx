@@ -210,6 +210,25 @@ export default function PortfolioDashboard() {
 
     return (
         <div className="space-y-6">
+            {/* Reset Button */}
+            {(snapshots.length > 0 || closedPositions.length > 0) && (
+                <div className="flex justify-end">
+                    <button
+                        onClick={() => {
+                            if (confirm('Reset all portfolio data? This will clear P&L history and closed positions. This cannot be undone.')) {
+                                clearSnapshots();
+                                clearClosedPositions();
+                            }
+                        }}
+                        className="text-xs text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1 px-3 py-2"
+                        title="Reset all portfolio data"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Reset Portfolio
+                    </button>
+                </div>
+            )}
+
             {/* Overall Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Total Positions */}

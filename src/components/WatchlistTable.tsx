@@ -22,7 +22,7 @@ import {
 
 export default function WatchlistTable() {
   const hydrated = useHydration();
-  const { closePosition } = usePortfolioStore();
+  const { closePosition, clearClosedPositions } = usePortfolioStore();
   const { items, addItem, removeItem, updateItem, clearAll } = useWatchlistStore();
   const [showAdd, setShowAdd] = useState(false);
   const [addMarket, setAddMarket] = useState<Market>('US');
@@ -139,6 +139,22 @@ export default function WatchlistTable() {
         </div>
 
         <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirm('Reset all watchlist data and closed positions? This cannot be undone.')) {
+                  clearAll();
+                  clearClosedPositions();
+                }
+              }}
+              className="text-xs text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1 px-3 py-2"
+              title="Reset watchlist & related portfolio data"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+          )}
+
           <button
             onClick={refreshWatchlist}
             disabled={refreshing || items.length === 0}

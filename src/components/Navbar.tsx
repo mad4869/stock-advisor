@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TrendingUp, Calculator, Eye, BarChart3, PieChart } from 'lucide-react';
+import { TrendingUp, Calculator, Eye, BarChart3, PieChart, Search, LineChart } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: BarChart3 },
   { href: '/recommend', label: 'Recommendations', icon: TrendingUp },
   { href: '/calculator', label: 'Lot Calculator', icon: Calculator },
   { href: '/watchlist', label: 'Watchlist', icon: Eye },
+  { href: '/screener', label: 'Screener', icon: Search },
+  { href: '/analysis', label: 'Analysis', icon: LineChart },
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
 ];
 
