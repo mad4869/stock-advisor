@@ -29,6 +29,61 @@ function toYSymbol(symbol: string, market: Market): string {
 }
 
 // ============================================================
+// searchStocks2 — for stock search
+// ============================================================
+
+export async function searchStocks2(
+  query: string,
+  market?: Market
+): Promise<{ symbol: string; name: string; market: Market }[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  // Re-use searchCache from cache.ts if we want, or just fetch directly.
+  // We'll just fetch directly for simplicity, but let's use the same filtering.
+  try {
+    const res = await yahooFinance.search(q);
+    const quotes = res.quotes;
+    
+    if (!quotes || !Array.isArray(quotes)) return [];
+
+    return quotes
+      .filter((q: any) => {
+        // Only equities or ETFs
+        if (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF') return false;
+
+        const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
+        const isUS = !q.symbol?.includes('.') ||
+          ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ', 'BATS', 'PCX'].includes(q.exchange);
+
+        // Only include US and IDX stocks since that's what the app supports
+        return isIDX || isUS;
+      })
+      .slice(0, 10)
+      .map((q: any) => {
+        const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
+        return {
+          symbol: q.symbol?.replace('.JK', '') || q.symbol,
+          name: q.longname || q.shortname || q.symbol,
+          market: isIDX ? ('ID' as Market) : ('US' as Market),
+        };
+      })
+      .sort((a, b) => {
+        // Bubble the currently selected market to the top
+        if (market) {
+          if (a.market === market && b.market !== market) return -1;
+          if (a.market !== market && b.market === market) return 1;
+        }
+        return 0;
+      });
+  } catch (err) {
+    console.error('[YF2] Search error:', err);
+    return [];
+  }
+}
+
+
+// ============================================================
 // getStockFundamentals2 — for screener (replaces manual v10 call)
 // ============================================================
 
@@ -92,6 +147,7 @@ export async function getStockFundamentals2(
     low52Week: r(sd.fiftyTwoWeekLow),
     beta: r(sd.beta) ?? r(ks.beta),
     price: r(fd.currentPrice),
+    sharesOutstanding: r(ks.sharesOutstanding) ?? r(sd.impliedSharesOutstanding) ?? null,
   };
 
   fundamentalsCache.set(cacheKey, result, CACHE_TTL.FUNDAMENTALS);
@@ -216,6 +272,7 @@ export async function getComprehensiveAnalysis2(
     low52Week: r(sd.fiftyTwoWeekLow),
     beta: r(sd.beta) ?? r(ks.beta),
     price: r(fd.currentPrice),
+    sharesOutstanding: r(ks.sharesOutstanding) ?? r(sd.impliedSharesOutstanding) ?? null,
   };
 
   // ---- Income Statements ----
@@ -240,6 +297,8 @@ export async function getComprehensiveAnalysis2(
       grossMargin: rev && gp ? (gp / rev) * 100 : null,
       operatingMargin: rev && oi ? (oi / rev) * 100 : null,
       netMargin: rev && ni ? (ni / rev) * 100 : null,
+      incomeBeforeTax: r(stmt.incomeBeforeTax),
+      incomeTaxExpense: r(stmt.incomeTaxExpense),
     };
   }).sort((a: AnnualFinancials, b: AnnualFinancials) => a.year.localeCompare(b.year));
 

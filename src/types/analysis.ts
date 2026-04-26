@@ -39,6 +39,10 @@ export interface AnnualFinancials {
   grossMargin: number | null;
   operatingMargin: number | null;
   netMargin: number | null;
+  
+  // Tax & Debt calculation fields
+  incomeBeforeTax?: number | null;
+  incomeTaxExpense?: number | null;
 }
 
 export interface AnnualBalanceSheet {

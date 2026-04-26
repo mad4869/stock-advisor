@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStockQuote, searchStocks } from '@/lib/stockData';
+import { getStockQuote } from '@/lib/stockData';
+import { searchStocks2 } from '@/lib/yahooFinance2';
 import { Market } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   try {
     if (query) {
-      const results = await searchStocks(query, market);
+      const results = await searchStocks2(query, market);
       return NextResponse.json({ results });
     }
 

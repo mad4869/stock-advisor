@@ -47,6 +47,7 @@ export interface FundamentalData {
 
   // Current price info
   price: number | null;
+  sharesOutstanding?: number | null; // Shares Outstanding for valuation
 }
 
 // ====== Screener Filter ======
