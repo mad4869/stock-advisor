@@ -227,8 +227,8 @@ function DCFPageContent() {
     matrix = generateSensitivityMatrix(
       activeData.assumptions, 
       inputs, 
-      [-0.02, -0.01, 0, 0.01, 0.02], 
-      [-0.01, -0.005, 0, 0.005, 0.01]
+      [-2, -1, 0, 1, 2],
+      [-1, -0.5, 0, 0.5, 1]
     );
   }
 

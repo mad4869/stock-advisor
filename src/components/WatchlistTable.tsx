@@ -28,6 +28,8 @@ export default function WatchlistTable() {
   const [addMarket, setAddMarket] = useState<Market>('US');
   const [addSymbol, setAddSymbol] = useState('');
   const [addBuyPrice, setAddBuyPrice] = useState('');
+  const [addStopLoss, setAddStopLoss] = useState('');
+  const [addTakeProfit, setAddTakeProfit] = useState('');
   const [addQuantity, setAddQuantity] = useState('');
   const [addDate, setAddDate] = useState(new Date().toISOString().split('T')[0]);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,6 +49,9 @@ export default function WatchlistTable() {
             symbol: i.symbol,
             market: i.market,
             buyPrice: i.buyPrice,
+            quantity: i.quantity,
+            stopLossPrice: i.stopLossPrice ?? null,
+            takeProfitPrice: i.takeProfitPrice ?? null,
           })),
         }),
       });
@@ -90,12 +95,16 @@ export default function WatchlistTable() {
         market: addMarket,
         name: data.quote.name,
         buyPrice: parseFloat(addBuyPrice),
+        stopLossPrice: addStopLoss ? parseFloat(addStopLoss) : null,
+        takeProfitPrice: addTakeProfit ? parseFloat(addTakeProfit) : null,
         buyDate: addDate,
         quantity: parseInt(addQuantity),
       });
 
       setAddSymbol('');
       setAddBuyPrice('');
+      setAddStopLoss('');
+      setAddTakeProfit('');
       setAddQuantity('');
       setShowAdd(false);
 
@@ -207,6 +216,36 @@ export default function WatchlistTable() {
 
             <div>
               <label className="label">
+                Stop Loss Price ({addMarket === 'ID' ? 'Rp' : '$'}) <span className="text-gray-600">(optional)</span>
+              </label>
+              <input
+                type="number"
+                value={addStopLoss}
+                onChange={(e) => setAddStopLoss(e.target.value)}
+                placeholder="Your stop-loss price"
+                className="input-field"
+                min="0"
+                step="any"
+              />
+            </div>
+
+            <div>
+              <label className="label">
+                Take Profit Price ({addMarket === 'ID' ? 'Rp' : '$'}) <span className="text-gray-600">(optional)</span>
+              </label>
+              <input
+                type="number"
+                value={addTakeProfit}
+                onChange={(e) => setAddTakeProfit(e.target.value)}
+                placeholder="Your take-profit price"
+                className="input-field"
+                min="0"
+                step="any"
+              />
+            </div>
+
+            <div>
+              <label className="label">
                 Quantity ({addMarket === 'ID' ? 'lots' : 'shares'})
               </label>
               <input
@@ -273,6 +312,35 @@ export default function WatchlistTable() {
               item={item}
               onRemove={() => removeItem(item.id)}
               onClose={(sellPrice: number) => {
+                const eps = item.market === 'ID' ? 1 : 0.01;
+                const hitSL =
+                  item.stopLossPrice != null && item.stopLossPrice > 0
+                    ? sellPrice <= item.stopLossPrice + eps
+                    : false;
+                const hitTP =
+                  item.takeProfitPrice != null && item.takeProfitPrice > 0
+                    ? sellPrice >= item.takeProfitPrice - eps
+                    : false;
+
+                const exitReason = hitSL
+                  ? ('STOP_LOSS' as const)
+                  : hitTP
+                    ? ('TAKE_PROFIT' as const)
+                    : ('MANUAL' as const);
+
+                const hadPlan =
+                  (item.stopLossPrice != null && item.stopLossPrice > 0) ||
+                  (item.takeProfitPrice != null && item.takeProfitPrice > 0);
+
+                const followedPlan = !hadPlan ? true : hitSL || hitTP;
+                const planAnalysis = !hadPlan
+                  ? 'No SL/TP plan recorded.'
+                  : hitSL
+                    ? 'Closed at/under stop loss — followed SL plan.'
+                    : hitTP
+                      ? 'Closed at/above take profit — followed TP plan.'
+                      : 'Closed away from SL/TP levels — did not follow the recorded plan.';
+
                 const pnl = (sellPrice - item.buyPrice) * item.quantity * (item.market === 'ID' ? 100 : 1);
                 const pnlPercent = ((sellPrice - item.buyPrice) / item.buyPrice) * 100;
                 closePosition({
@@ -281,12 +349,17 @@ export default function WatchlistTable() {
                   market: item.market,
                   name: item.name,
                   buyPrice: item.buyPrice,
+                  stopLossPrice: item.stopLossPrice ?? null,
+                  takeProfitPrice: item.takeProfitPrice ?? null,
                   buyDate: item.buyDate,
                   sellPrice,
                   sellDate: new Date().toISOString().split('T')[0],
                   quantity: item.quantity,
                   pnl,
                   pnlPercent,
+                  exitReason,
+                  followedPlan,
+                  planAnalysis,
                 });
                 removeItem(item.id);
               }}
@@ -444,6 +517,12 @@ function WatchlistCard({
             Quantity: {item.quantity} {item.market === 'ID' ? 'lots' : 'shares'}
           </div>
           <div>Buy Date: {item.buyDate}</div>
+          <div>
+            Stop Loss: {item.stopLossPrice ? formatCurrency(item.stopLossPrice, item.market) : '—'}
+          </div>
+          <div>
+            Take Profit: {item.takeProfitPrice ? formatCurrency(item.takeProfitPrice, item.market) : '—'}
+          </div>
           <div className="col-span-2">
             Last Updated: {new Date(item.lastUpdated).toLocaleString()}
           </div>

@@ -320,9 +320,26 @@ function generateSummary(
 export function getWatchAction(
   buyPrice: number,
   currentPrice: number,
-  indicators: TechnicalIndicators
+  indicators: TechnicalIndicators,
+  stopLossPrice?: number | null,
+  takeProfitPrice?: number | null
 ): { action: Signal; reason: string } {
   const pnlPercent = ((currentPrice - buyPrice) / buyPrice) * 100;
+
+  // Explicit SL/TP plan (if provided)
+  if (stopLossPrice != null && stopLossPrice > 0 && currentPrice <= stopLossPrice) {
+    return {
+      action: 'STRONG_SELL',
+      reason: `Current price has reached your stop-loss (${currentPrice.toLocaleString()} ≤ ${stopLossPrice.toLocaleString()}). Consider exiting to follow your risk plan.`,
+    };
+  }
+
+  if (takeProfitPrice != null && takeProfitPrice > 0 && currentPrice >= takeProfitPrice) {
+    return {
+      action: 'SELL',
+      reason: `Current price has reached your take-profit (${currentPrice.toLocaleString()} ≥ ${takeProfitPrice.toLocaleString()}). Consider taking profits per your plan.`,
+    };
+  }
 
   // Stop loss check (-7%)
   if (pnlPercent <= -7) {

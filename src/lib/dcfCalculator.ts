@@ -82,8 +82,10 @@ export function calculateDCF(
   const equityValue = enterpriseValue - totalDebt + cashAndEquivalents;
   
   const intrinsicValuePerShare = sharesOutstanding > 0 ? equityValue / sharesOutstanding : 0;
-  const marginOfSafety = intrinsicValuePerShare > 0 
-    ? ((intrinsicValuePerShare - currentPrice) / intrinsicValuePerShare) * 100 
+  // Keep MoS consistent across the app (and more intuitive for users):
+  // positive means "undervalued vs current price"
+  const marginOfSafety = currentPrice > 0
+    ? ((intrinsicValuePerShare - currentPrice) / currentPrice) * 100
     : 0;
 
   // Verdict logic

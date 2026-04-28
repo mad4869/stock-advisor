@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Market, StockRecommendation } from '@/types';
+import { Market } from '@/types';
+import { CompositeScore } from '@/types/scoring';
 import MarketToggle from '@/components/MarketToggle';
 import StockSearch from '@/components/StockSearch';
-import StockCard from '@/components/StockCard';
-import { TrendingUp, Loader2, Sparkles, RefreshCw } from 'lucide-react';
+import { TrendingUp, Loader2, Sparkles, RefreshCw, Target } from 'lucide-react';
+import ScoreGauge from '@/components/score/ScoreGauge';
+import ScoreBreakdown from '@/components/score/ScoreBreakdown';
 
 export default function RecommendPage() {
   const [market, setMarket] = useState<Market>('US');
-  const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
-  const [searchResult, setSearchResult] = useState<StockRecommendation | null>(null);
+  const [recommendations, setRecommendations] = useState<CompositeScore[]>([]);
+  const [searchResult, setSearchResult] = useState<CompositeScore | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState('');
@@ -38,13 +40,13 @@ export default function RecommendPage() {
     setSearchResult(null);
 
     try {
-      const res = await fetch(`/api/analyze?symbol=${symbol}&market=${m}`);
+      const res = await fetch(`/api/score?symbol=${symbol}&market=${m}`);
       const data = await res.json();
 
       if (data.error) throw new Error(data.error);
-      setSearchResult(data.recommendation);
+      setSearchResult(data.score);
     } catch (err: any) {
-      setError(err.message || 'Failed to analyze stock.');
+      setError(err.message || 'Failed to score stock.');
     } finally {
       setSearchLoading(false);
     }
@@ -64,8 +66,8 @@ export default function RecommendPage() {
             <h1 className="text-2xl font-bold text-white">Stock Recommendations</h1>
           </div>
           <p className="text-sm text-gray-400">
-            Technical analysis-based signals for popular{' '}
-            {market === 'ID' ? 'Indonesian (IDX)' : 'US'} stocks
+            Unified scores (Technical + Fundamental + DCF Valuation) for popular{' '}
+            {market === 'ID' ? 'Indonesian (IDX)' : 'US'} stocks — sorted highest first
           </p>
         </div>
 
@@ -84,12 +86,12 @@ export default function RecommendPage() {
       {/* Search */}
       <div className="card">
         <h3 className="text-sm font-bold text-gray-400 mb-3">
-          Or analyze a specific stock
+          Or score a specific stock
         </h3>
         <StockSearch
           market={market}
           onSelect={(s, m) => handleSearch(s, m)}
-          placeholder={`Analyze any ${market === 'ID' ? 'IDX' : 'US'} stock...`}
+          placeholder={`Score any ${market === 'ID' ? 'IDX' : 'US'} stock...`}
         />
       </div>
 
@@ -103,7 +105,14 @@ export default function RecommendPage() {
       {searchResult && (
         <div className="animate-slide-up">
           <h3 className="text-sm font-bold text-gray-400 mb-3">Search Result</h3>
-          <StockCard recommendation={searchResult} />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-5">
+              <ScoreGauge score={searchResult.totalScore} recommendation={searchResult.recommendation} />
+            </div>
+            <div className="lg:col-span-7">
+              <ScoreBreakdown score={searchResult} />
+            </div>
+          </div>
         </div>
       )}
 
@@ -129,11 +138,35 @@ export default function RecommendPage() {
       {!loading && recommendations.length > 0 && (
         <div>
           <h3 className="text-sm font-bold text-gray-400 mb-4">
-            Top Picks — Sorted by Signal Strength
+            Top Picks — Sorted by Unified Score
           </h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {recommendations.map((rec) => (
-              <StockCard key={rec.stock.symbol} recommendation={rec} />
+              <div key={`${rec.symbol}-${rec.market}`} className="card-hover">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Target className="w-4 h-4 text-blue-400" />
+                      <h4 className="text-lg font-bold text-white">{rec.symbol}</h4>
+                      <span className="text-xs text-gray-500">
+                        {rec.market === 'ID' ? '🇮🇩' : '🇺🇸'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{rec.summary}</p>
+                  </div>
+                  <div className="shrink-0">
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Score</p>
+                      <p className="text-2xl font-bold text-white">{rec.totalScore.toFixed(0)}</p>
+                      <p className="text-xs font-semibold text-blue-400">{rec.recommendation}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <ScoreBreakdown score={rec} />
+                </div>
+              </div>
             ))}
           </div>
         </div>

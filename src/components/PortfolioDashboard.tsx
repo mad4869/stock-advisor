@@ -700,10 +700,13 @@ function ClosedPositionsTable({
                         <tr className="text-xs text-gray-500 border-b border-dark-600">
                             <th className="text-left py-2 px-3">Symbol</th>
                             <th className="text-right py-2 px-3">Buy</th>
+                            <th className="text-right py-2 px-3">SL</th>
+                            <th className="text-right py-2 px-3">TP</th>
                             <th className="text-right py-2 px-3">Sell</th>
                             <th className="text-right py-2 px-3">Qty</th>
                             <th className="text-right py-2 px-3">P&L</th>
                             <th className="text-right py-2 px-3">P&L %</th>
+                            <th className="text-right py-2 px-3">Plan</th>
                             <th className="text-right py-2 px-3">Date</th>
                         </tr>
                     </thead>
@@ -716,6 +719,12 @@ function ClosedPositionsTable({
                                     <td className="py-2.5 px-3 font-medium text-white">{pos.symbol}</td>
                                     <td className="py-2.5 px-3 text-right text-gray-400">
                                         {formatCurrency(pos.buyPrice, market)}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right text-gray-500">
+                                        {pos.stopLossPrice ? formatCurrency(pos.stopLossPrice, market) : '—'}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right text-gray-500">
+                                        {pos.takeProfitPrice ? formatCurrency(pos.takeProfitPrice, market) : '—'}
                                     </td>
                                     <td className="py-2.5 px-3 text-right text-gray-400">
                                         {formatCurrency(pos.sellPrice, market)}
@@ -740,6 +749,16 @@ function ClosedPositionsTable({
                                     >
                                         {pos.pnlPercent >= 0 ? '+' : ''}
                                         {pos.pnlPercent.toFixed(2)}%
+                                    </td>
+                                    <td
+                                        className={
+                                            'py-2.5 px-3 text-right text-xs font-semibold ' +
+                                            (pos.followedPlan === false ? 'text-red-400' : 'text-green-400')
+                                        }
+                                        title={pos.planAnalysis || ''}
+                                    >
+                                        {pos.exitReason || '—'}
+                                        {pos.followedPlan === false ? ' ✕' : pos.followedPlan === true ? ' ✓' : ''}
                                     </td>
                                     <td className="py-2.5 px-3 text-right text-gray-500">{pos.sellDate}</td>
                                 </tr>

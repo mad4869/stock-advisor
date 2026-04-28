@@ -4,7 +4,12 @@ import { WatchlistItem, Market } from '@/types';
 
 interface WatchlistStore {
   items: WatchlistItem[];
-  addItem: (item: Omit<WatchlistItem, 'id' | 'currentPrice' | 'pnl' | 'pnlPercent' | 'action' | 'actionReason' | 'lastUpdated'>) => void;
+  addItem: (
+    item: Omit<
+      WatchlistItem,
+      'id' | 'currentPrice' | 'pnl' | 'pnlPercent' | 'action' | 'actionReason' | 'lastUpdated'
+    >
+  ) => void;
   removeItem: (id: string) => void;
   updateItem: (id: string, updates: Partial<WatchlistItem>) => void;
   clearAll: () => void;

@@ -91,6 +91,8 @@ export interface WatchlistItem {
   market: Market;
   name: string;
   buyPrice: number;
+  stopLossPrice?: number | null;
+  takeProfitPrice?: number | null;
   buyDate: string;
   quantity: number;
   currentPrice: number;
@@ -170,10 +172,15 @@ export interface ClosedPosition {
   market: Market;
   name: string;
   buyPrice: number;
+  stopLossPrice?: number | null;
+  takeProfitPrice?: number | null;
   buyDate: string;
   sellPrice: number;
   sellDate: string;
   quantity: number;
   pnl: number;
   pnlPercent: number;
+  exitReason?: 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL';
+  followedPlan?: boolean;
+  planAnalysis?: string;
 }

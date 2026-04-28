@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TrendingUp, Calculator, Eye, BarChart3, PieChart, Search, LineChart, Banknote, Star } from 'lucide-react';
+import { TrendingUp, Calculator, Eye, BarChart3, PieChart, Search } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: BarChart3 },
@@ -10,9 +10,6 @@ const navItems = [
   { href: '/calculator', label: 'Lot Calculator', icon: Calculator },
   { href: '/watchlist', label: 'Watchlist', icon: Eye },
   { href: '/screener', label: 'Screener', icon: Search },
-  { href: '/analysis', label: 'Analysis', icon: LineChart },
-  { href: '/dcf', label: 'Valuation', icon: Banknote },
-  { href: '/score', label: 'Score', icon: Star },
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
 ];
 

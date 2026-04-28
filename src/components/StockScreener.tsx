@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Market } from '@/types';
 import {
   ScreenerFilters,
@@ -14,20 +14,27 @@ import {
 } from '@/types/screener';
 import { SCREENER_PRESETS } from '@/lib/screenerPresets';
 import MarketToggle from './MarketToggle';
+import CompanyOverview from '@/components/analysis/CompanyOverview';
+import ValuationMetrics from '@/components/analysis/ValuationMetrics';
+import RedFlagsPanel from '@/components/analysis/RedFlagsPanel';
+import ScoreGauge from '@/components/score/ScoreGauge';
+import ScoreBreakdown from '@/components/score/ScoreBreakdown';
+import { CompositeScore } from '@/types/scoring';
+import { AnalysisResponse } from '@/types/analysis';
+import { DCFResult } from '@/types/dcf';
 import {
   Search,
   Filter,
   Loader2,
   AlertCircle,
-  TrendingUp,
-  TrendingDown,
   ChevronDown,
   ChevronUp,
   X,
-  Plus,
   RotateCcw,
   CheckCircle2,
-  ArrowUpDown,
+  Target,
+  LineChart,
+  Banknote,
 } from 'lucide-react';
 
 // ============================================================
@@ -98,6 +105,15 @@ export default function StockScreener() {
     totalMatched: number;
     errors: string[];
   } | null>(null);
+
+  // Drill-in state
+  const [selected, setSelected] = useState<{ symbol: string; market: Market } | null>(null);
+  const [activeModule, setActiveModule] = useState<'score' | 'analysis' | 'valuation'>('score');
+  const [scoreData, setScoreData] = useState<CompositeScore | null>(null);
+  const [analysisData, setAnalysisData] = useState<AnalysisResponse | null>(null);
+  const [dcfData, setDcfData] = useState<DCFResult | null>(null);
+  const [moduleLoading, setModuleLoading] = useState(false);
+  const [moduleError, setModuleError] = useState<string | null>(null);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>('symbol');
@@ -235,6 +251,41 @@ export default function StockScreener() {
     const activeKeys = Object.keys(filters) as ScreenerFilterKey[];
     return FILTER_METADATA.filter((m) => activeKeys.includes(m.key));
   }, [filters]);
+
+  // Fetch selected module data
+  useEffect(() => {
+    async function run() {
+      if (!selected) return;
+      setModuleLoading(true);
+      setModuleError(null);
+
+      try {
+        if (activeModule === 'score') {
+          const res = await fetch(`/api/score?symbol=${selected.symbol}&market=${selected.market}`);
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Failed to load score');
+          setScoreData(json.score);
+        } else if (activeModule === 'analysis') {
+          const res = await fetch(`/api/analysis?symbol=${selected.symbol}&market=${selected.market}`);
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Failed to load analysis');
+          setAnalysisData(json);
+        } else if (activeModule === 'valuation') {
+          const res = await fetch(`/api/valuation?symbol=${selected.symbol}&market=${selected.market}`);
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Failed to load valuation');
+          setDcfData(json.dcf);
+        }
+      } catch (err: any) {
+        setModuleError(err.message || 'Failed to load module');
+      } finally {
+        setModuleLoading(false);
+      }
+    }
+
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.symbol, selected?.market, activeModule]);
 
   return (
     <div className="space-y-6">
@@ -492,9 +543,10 @@ export default function StockScreener() {
 
       {/* Results Table */}
       {sortedResults && sortedResults.length > 0 && (
-        <div className="card p-0 overflow-hidden">
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 card p-0 overflow-hidden">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-dark-600 bg-dark-800">
                   <th className="text-left py-3 px-4 sticky left-0 bg-dark-800 z-10">
@@ -528,7 +580,16 @@ export default function StockScreener() {
                 {sortedResults.map((result) => (
                   <tr
                     key={result.stock.symbol}
-                    className="border-b border-dark-700 hover:bg-dark-800 transition-colors"
+                    className={`border-b border-dark-700 hover:bg-dark-800 transition-colors cursor-pointer ${
+                      selected?.symbol === result.stock.symbol ? 'bg-blue-600/10' : ''
+                    }`}
+                    onClick={() => {
+                      setSelected({ symbol: result.stock.symbol, market: result.stock.market });
+                      setActiveModule('score');
+                      setScoreData(null);
+                      setAnalysisData(null);
+                      setDcfData(null);
+                    }}
                   >
                     <td className="py-3 px-4 sticky left-0 bg-dark-700 z-10">
                       <div>
@@ -567,6 +628,167 @@ export default function StockScreener() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+          {/* Inline Modules Panel */}
+          <div className="lg:col-span-5">
+            {!selected ? (
+              <div className="card py-14 text-center">
+                <Target className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-gray-400 mb-2">Select a stock</h3>
+                <p className="text-sm text-gray-500">
+                  Click a screener result to run Score, Analysis, and Valuation right here.
+                </p>
+              </div>
+            ) : (
+              <div className="card space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">
+                      {selected.symbol}{' '}
+                      <span className="text-xs text-gray-500">
+                        {selected.market === 'ID' ? '🇮🇩' : '🇺🇸'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-gray-500">Modules</p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <a
+                      href={`/analysis?symbol=${selected.symbol}&market=${selected.market}`}
+                      className="text-gray-500 hover:text-white transition-colors"
+                    >
+                      Open full Analysis
+                    </a>
+                    <span className="text-gray-700">•</span>
+                    <a
+                      href={`/dcf?symbol=${selected.symbol}&market=${selected.market}`}
+                      className="text-gray-500 hover:text-white transition-colors"
+                    >
+                      Open full Valuation
+                    </a>
+                    <span className="text-gray-700">•</span>
+                    <a
+                      href={`/score?symbol=${selected.symbol}&market=${selected.market}`}
+                      className="text-gray-500 hover:text-white transition-colors"
+                    >
+                      Open full Score
+                    </a>
+                  </div>
+                </div>
+
+                <div className="flex items-center bg-dark-800 rounded-lg p-1 border border-dark-600">
+                  <button
+                    onClick={() => setActiveModule('score')}
+                    className={
+                      'flex-1 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-2 ' +
+                      (activeModule === 'score'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white')
+                    }
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                    Score
+                  </button>
+                  <button
+                    onClick={() => setActiveModule('analysis')}
+                    className={
+                      'flex-1 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-2 ' +
+                      (activeModule === 'analysis'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white')
+                    }
+                  >
+                    <LineChart className="w-3.5 h-3.5" />
+                    Analysis
+                  </button>
+                  <button
+                    onClick={() => setActiveModule('valuation')}
+                    className={
+                      'flex-1 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-2 ' +
+                      (activeModule === 'valuation'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white')
+                    }
+                  >
+                    <Banknote className="w-3.5 h-3.5" />
+                    Valuation
+                  </button>
+                </div>
+
+                {moduleLoading && (
+                  <div className="flex items-center justify-center py-10 text-gray-500">
+                    <Loader2 className="w-6 h-6 animate-spin mr-3 text-blue-400" />
+                    Loading {activeModule}…
+                  </div>
+                )}
+
+                {moduleError && (
+                  <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-3 text-sm flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {moduleError}
+                  </div>
+                )}
+
+                {!moduleLoading && !moduleError && activeModule === 'score' && scoreData && (
+                  <div className="space-y-4">
+                    <ScoreGauge score={scoreData.totalScore} recommendation={scoreData.recommendation} />
+                    <ScoreBreakdown score={scoreData} />
+                  </div>
+                )}
+
+                {!moduleLoading && !moduleError && activeModule === 'analysis' && analysisData?.analysis && (
+                  <div className="space-y-4">
+                    <RedFlagsPanel redFlags={analysisData.redFlags || []} />
+                    <CompanyOverview analysis={analysisData.analysis} />
+                    <ValuationMetrics fundamentals={analysisData.analysis.fundamentals} analystRating={analysisData.analysis.analystRating} />
+                  </div>
+                )}
+
+                {!moduleLoading && !moduleError && activeModule === 'valuation' && (
+                  <div className="space-y-3">
+                    {dcfData ? (
+                      <div className="bg-dark-800 rounded-xl p-4 border border-dark-600">
+                        <p className="text-xs text-gray-500 mb-2">Base-case DCF</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-[10px] text-gray-500">Intrinsic Value / Share</p>
+                            <p className="text-lg font-bold text-white">
+                              {selected.market === 'ID' ? 'Rp' : '$'}
+                              {dcfData.intrinsicValuePerShare.toLocaleString(undefined, {
+                                maximumFractionDigits: selected.market === 'ID' ? 0 : 2,
+                              })}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] text-gray-500">Margin of Safety</p>
+                            <p className={`text-lg font-bold ${dcfData.marginOfSafety >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {dcfData.marginOfSafety >= 0 ? '+' : ''}
+                              {dcfData.marginOfSafety.toFixed(1)}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-gray-500">WACC</p>
+                            <p className="text-sm font-bold text-gray-200">{dcfData.wacc.toFixed(2)}%</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] text-gray-500">Verdict</p>
+                            <p className="text-sm font-bold text-blue-400">{dcfData.verdict}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-gray-600 mt-3">
+                          Terminal value is {dcfData.terminalValuePercentOfEV.toFixed(0)}% of enterprise value.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 rounded-xl p-3 text-sm">
+                        DCF unavailable (typically due to negative/unknown free cash flow).
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

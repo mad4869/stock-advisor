@@ -3,6 +3,7 @@ import { Market } from '@/types';
 import { computeCompositeScore } from '@/lib/scoreService';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -14,14 +15,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { score } = await computeCompositeScore(symbol, market);
-    return NextResponse.json({ score });
-
+    const { dcfResult } = await computeCompositeScore(symbol, market);
+    return NextResponse.json({ dcf: dcfResult });
   } catch (error: any) {
-    console.error('[Score API Error]', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to compute score' },
+      { error: error.message || 'Failed to compute valuation' },
       { status: 500 }
     );
   }
 }
+

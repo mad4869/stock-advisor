@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     const updates = await Promise.allSettled(
-      items.map(async (item: { symbol: string; market: Market; buyPrice: number; id: string }) => {
+      items.map(async (item: { symbol: string; market: Market; buyPrice: number; quantity: number; stopLossPrice?: number | null; takeProfitPrice?: number | null; id: string }) => {
         try {
           const [quote, historicalData] = await Promise.all([
             getStockQuote(item.symbol, item.market),
@@ -28,18 +28,22 @@ export async function POST(request: NextRequest) {
             historicalData.length >= 50 ? calculateIndicators(historicalData) : null;
 
           const currentPrice = quote.price;
-          const pnl = currentPrice - item.buyPrice;
-          const pnlPercent = (pnl / item.buyPrice) * 100;
+          const lotMultiplier = item.market === 'ID' ? 100 : 1;
+          const quantity = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+
+          const pnlPerUnit = currentPrice - item.buyPrice;
+          const pnl = pnlPerUnit * quantity * lotMultiplier;
+          const pnlPercent = item.buyPrice > 0 ? (pnlPerUnit / item.buyPrice) * 100 : 0;
 
           let action: { action: Signal; reason: string } = { action: 'HOLD', reason: 'Insufficient data for analysis.' };
           if (indicators) {
-            action = getWatchAction(item.buyPrice, currentPrice, indicators);
+            action = getWatchAction(item.buyPrice, currentPrice, indicators, item.stopLossPrice, item.takeProfitPrice);
           }
 
           return {
             id: item.id,
             currentPrice,
-            pnl: pnl * (item.market === 'ID' ? 100 : 1),
+            pnl,
             pnlPercent,
             action: action.action,
             actionReason: action.reason,

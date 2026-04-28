@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStockQuote, getHistoricalData, POPULAR_STOCKS } from '@/lib/stockData';
-import { calculateIndicators } from '@/lib/indicators';
-import { analyzeStock } from '@/lib/recommendations';
-import { Market, StockRecommendation } from '@/types';
+import { POPULAR_STOCKS } from '@/lib/stockData';
+import { computeCompositeScore } from '@/lib/scoreService';
+import { Market } from '@/types';
 
 // Increase Vercel serverless function timeout
 export const maxDuration = 30; // seconds (default is 10)
@@ -11,10 +10,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const market = (searchParams.get('market') || 'US') as Market;
+  const limit = Math.max(1, Math.min(20, parseInt(searchParams.get('limit') || '10')));
 
   try {
     const stocks = POPULAR_STOCKS.filter((s) => s.market === market);
-    const recommendations: StockRecommendation[] = [];
+    const scored: { symbol: string; score: number; payload: any }[] = [];
 
     // Process in smaller batches to avoid timeout
     const batchSize = 2;
@@ -23,15 +23,8 @@ export async function GET(request: NextRequest) {
       const results = await Promise.allSettled(
         batch.map(async (stock) => {
           try {
-            const [quote, historicalData] = await Promise.all([
-              getStockQuote(stock.symbol, market),
-              getHistoricalData(stock.symbol, market, 12),
-            ]);
-            if (historicalData.length >= 50) {
-              const indicators = calculateIndicators(historicalData);
-              return analyzeStock(quote, indicators);
-            }
-            return null;
+            const { score } = await computeCompositeScore(stock.symbol, market);
+            return score;
           } catch (err) {
             console.error(`Failed to analyze ${stock.symbol}:`, err);
             return null;
@@ -41,19 +34,26 @@ export async function GET(request: NextRequest) {
 
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
-          recommendations.push(result.value);
+          scored.push({
+            symbol: result.value.symbol,
+            score: result.value.totalScore,
+            payload: result.value,
+          });
         }
       }
     }
 
-    const signalOrder = { STRONG_BUY: 0, BUY: 1, HOLD: 2, SELL: 3, STRONG_SELL: 4 };
-    recommendations.sort((a, b) => {
-      const orderDiff = signalOrder[a.overallSignal] - signalOrder[b.overallSignal];
-      if (orderDiff !== 0) return orderDiff;
-      return b.confidence - a.confidence;
-    });
+    scored.sort((a, b) => b.score - a.score);
 
-    return NextResponse.json({ recommendations });
+    return NextResponse.json({
+      recommendations: scored.slice(0, limit).map((s) => s.payload),
+      meta: {
+        market,
+        universeSize: stocks.length,
+        returned: Math.min(limit, scored.length),
+        sort: 'totalScore_desc',
+      },
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || 'Failed to generate recommendations' },
