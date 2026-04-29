@@ -74,19 +74,20 @@ export default function WatchlistPage() {
           </div>
         </div>
 
-        {/* Stop Loss Explanation */}
+        {/* Stop Loss / Take Profit Explanation */}
         <div className="mt-6 bg-red-500/5 border border-red-500/20 rounded-xl p-4">
-          <h3 className="font-bold text-red-400 text-sm mb-2">⚠️ About Stop-Loss (-7%)</h3>
+          <h3 className="font-bold text-red-400 text-sm mb-2">⚠️ About Stop-Loss &amp; Take-Profit</h3>
           <p className="text-sm text-gray-400 leading-relaxed">
-            This app uses a default stop-loss level of <strong className="text-red-300">-7%</strong>{' '}
-            from your buy price. If a stock drops 7% from your entry, we recommend selling to
-            prevent further losses. This is based on a widely-used risk management principle:
-            <strong className="text-gray-300">
-              {' '}
-              &quot;Cut your losses short and let your winners run.&quot;
-            </strong>{' '}
-            You can always re-enter at a better price later. Remember, a 7% loss requires only ~7.5%
-            gain to recover, but a 50% loss requires a 100% gain.
+            This watchlist is <strong className="text-gray-300">plan-based</strong>: if you record a
+            stop-loss (SL) and/or take-profit (TP) price when adding a position, the app uses those
+            exact levels in its action signals (e.g. “SL hit” / “TP hit”). If you record both, it can
+            also infer your <strong className="text-gray-300">risk-reward factor</strong> (how many
+            “R” you target relative to the distance from entry to SL).
+            <br />
+            <br />
+            If SL/TP is missing, the app will still show indicator-based guidance, but it won&apos;t
+            assume a fixed stop-loss % for you. For risk-based decisions, always define your SL/TP
+            prices.
           </p>
         </div>
 

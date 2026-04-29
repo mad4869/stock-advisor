@@ -326,26 +326,52 @@ export function getWatchAction(
 ): { action: Signal; reason: string } {
   const pnlPercent = ((currentPrice - buyPrice) / buyPrice) * 100;
 
+  const planHint = (() => {
+    const sl =
+      typeof stopLossPrice === 'number' && Number.isFinite(stopLossPrice) && stopLossPrice > 0
+        ? stopLossPrice
+        : null;
+    const tp =
+      typeof takeProfitPrice === 'number' && Number.isFinite(takeProfitPrice) && takeProfitPrice > 0
+        ? takeProfitPrice
+        : null;
+
+    if (!sl && !tp) return '';
+
+    // Compute risk-reward factor (R multiple) if both SL and TP exist and SL is below entry.
+    let rrPart = '';
+    if (sl !== null && tp !== null && sl < buyPrice && tp !== buyPrice) {
+      const riskPerUnit = buyPrice - sl;
+      const rewardPerUnit = tp - buyPrice;
+      if (riskPerUnit > 0) {
+        const rr = rewardPerUnit / riskPerUnit;
+        if (Number.isFinite(rr)) rrPart = ` (factor ≈ ${rr.toFixed(2)}R)`;
+      }
+    }
+
+    const parts: string[] = [];
+    if (sl !== null) parts.push(`SL ${sl.toLocaleString()}`);
+    if (tp !== null) parts.push(`TP ${tp.toLocaleString()}`);
+    return parts.length > 0 ? ` Plan: ${parts.join(' • ')}${rrPart}.` : '';
+  })();
+
+  const missingPlanHint =
+    !stopLossPrice && !takeProfitPrice
+      ? ' Add SL/TP prices to make this risk-based.'
+      : '';
+
   // Explicit SL/TP plan (if provided)
   if (stopLossPrice != null && stopLossPrice > 0 && currentPrice <= stopLossPrice) {
     return {
       action: 'STRONG_SELL',
-      reason: `Current price has reached your stop-loss (${currentPrice.toLocaleString()} ≤ ${stopLossPrice.toLocaleString()}). Consider exiting to follow your risk plan.`,
+      reason: `Current price has reached your stop-loss (${currentPrice.toLocaleString()} ≤ ${stopLossPrice.toLocaleString()}). Consider exiting to follow your plan.${planHint}`,
     };
   }
 
   if (takeProfitPrice != null && takeProfitPrice > 0 && currentPrice >= takeProfitPrice) {
     return {
       action: 'SELL',
-      reason: `Current price has reached your take-profit (${currentPrice.toLocaleString()} ≥ ${takeProfitPrice.toLocaleString()}). Consider taking profits per your plan.`,
-    };
-  }
-
-  // Stop loss check (-7%)
-  if (pnlPercent <= -7) {
-    return {
-      action: 'STRONG_SELL',
-      reason: `Price has dropped ${pnlPercent.toFixed(1)}% from your buy price. This has hit the recommended stop-loss level of -7%. Consider cutting losses to preserve capital.`,
+      reason: `Current price has reached your take-profit (${currentPrice.toLocaleString()} ≥ ${takeProfitPrice.toLocaleString()}). Consider taking profits per your plan.${planHint}`,
     };
   }
 
@@ -353,7 +379,7 @@ export function getWatchAction(
   if (pnlPercent >= 20 && indicators.rsi !== null && indicators.rsi > 70) {
     return {
       action: 'SELL',
-      reason: `You're up ${pnlPercent.toFixed(1)}% and the RSI (${indicators.rsi.toFixed(1)}) indicates overbought conditions. Consider taking profits.`,
+      reason: `You're up ${pnlPercent.toFixed(1)}% and the RSI (${indicators.rsi.toFixed(1)}) indicates overbought conditions. Consider taking profits.${planHint}`,
     };
   }
 
@@ -362,12 +388,12 @@ export function getWatchAction(
     if (indicators.macd && indicators.macd.histogram < 0) {
       return {
         action: 'SELL',
-        reason: `You're up ${pnlPercent.toFixed(1)}% but MACD momentum is fading (histogram is negative). Consider locking in profits with a trailing stop.`,
+        reason: `You're up ${pnlPercent.toFixed(1)}% but MACD momentum is fading (histogram is negative). Consider locking in profits with a trailing stop.${planHint}`,
       };
     }
     return {
       action: 'HOLD',
-      reason: `You're up ${pnlPercent.toFixed(1)}%. Momentum is still positive. Set a trailing stop to protect gains.`,
+      reason: `You're up ${pnlPercent.toFixed(1)}%. Momentum is still positive. Set a trailing stop to protect gains.${planHint}`,
     };
   }
 
@@ -375,14 +401,14 @@ export function getWatchAction(
   if (pnlPercent <= -3 && indicators.rsi !== null && indicators.rsi < 35) {
     return {
       action: 'HOLD',
-      reason: `You're down ${Math.abs(pnlPercent).toFixed(1)}% but RSI (${indicators.rsi.toFixed(1)}) shows oversold conditions. A bounce may occur. Consider holding with a stop at -7%.`,
+      reason: `You're down ${Math.abs(pnlPercent).toFixed(1)}% but RSI (${indicators.rsi.toFixed(1)}) shows oversold conditions. A bounce may occur. Consider holding, but keep risk defined via your stop-loss.${planHint}${missingPlanHint}`,
     };
   }
 
   if (pnlPercent <= -3 && indicators.macd && indicators.macd.histogram < 0) {
     return {
       action: 'SELL',
-      reason: `You're down ${Math.abs(pnlPercent).toFixed(1)}% and bearish momentum continues (MACD histogram negative). Consider reducing position.`,
+      reason: `You're down ${Math.abs(pnlPercent).toFixed(1)}% and bearish momentum continues (MACD histogram negative). Consider reducing position.${planHint}${missingPlanHint}`,
     };
   }
 
@@ -390,12 +416,12 @@ export function getWatchAction(
   if (pnlPercent > 0) {
     return {
       action: 'HOLD',
-      reason: `You're up ${pnlPercent.toFixed(1)}%. No strong exit signals yet. Continue monitoring.`,
+      reason: `You're up ${pnlPercent.toFixed(1)}%. No strong exit signals yet. Continue monitoring.${planHint}`,
     };
   } else {
     return {
       action: 'HOLD',
-      reason: `You're down ${Math.abs(pnlPercent).toFixed(1)}%. Within normal range. Monitor for stop-loss at -7%.`,
+      reason: `You're down ${Math.abs(pnlPercent).toFixed(1)}%. Within normal range. Keep your risk defined and monitor closely.${planHint}${missingPlanHint}`,
     };
   }
 }
