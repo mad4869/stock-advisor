@@ -47,19 +47,19 @@ export async function searchStocks2(
     
     if (!quotes || !Array.isArray(quotes)) return [];
 
-    return quotes
+    const mapped = quotes
       .filter((q: any) => {
         // Only equities or ETFs
         if (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF') return false;
 
         const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
-        const isUS = !q.symbol?.includes('.') ||
+        const isUS =
+          !q.symbol?.includes('.') ||
           ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ', 'BATS', 'PCX'].includes(q.exchange);
 
         // Only include US and IDX stocks since that's what the app supports
         return isIDX || isUS;
       })
-      .slice(0, 10)
       .map((q: any) => {
         const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
         return {
@@ -67,15 +67,27 @@ export async function searchStocks2(
           name: q.longname || q.shortname || q.symbol,
           market: isIDX ? ('ID' as Market) : ('US' as Market),
         };
-      })
-      .sort((a, b) => {
-        // Bubble the currently selected market to the top
-        if (market) {
-          if (a.market === market && b.market !== market) return -1;
-          if (a.market !== market && b.market === market) return 1;
-        }
-        return 0;
       });
+
+    // De-dupe by (market, symbol) to avoid collisions like US:BULL vs ID:BULL
+    const seen = new Set<string>();
+    const unique = mapped.filter((r) => {
+      const key = `${r.market}:${r.symbol}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // If a market is selected, prioritize it *before* slicing.
+    unique.sort((a, b) => {
+      if (market) {
+        if (a.market === market && b.market !== market) return -1;
+        if (a.market !== market && b.market === market) return 1;
+      }
+      return 0;
+    });
+
+    return unique.slice(0, 10);
   } catch (err) {
     console.error('[YF2] Search error:', err);
     return [];
