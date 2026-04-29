@@ -97,9 +97,51 @@ export async function getStockFundamentals2(
 
   const ySymbol = toYSymbol(symbol, market);
 
-  const summary: any = await yahooFinance.quoteSummary(ySymbol, {
-    modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData'],
-  });
+  let summary: any;
+  try {
+    summary = await yahooFinance.quoteSummary(ySymbol, {
+      modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData'],
+    });
+  } catch (err: any) {
+    // For some tickers (often IDX names, delisted symbols, etc.) Yahoo returns no fundamentals.
+    // Screener UI expects "no match" rather than a hard error.
+    const empty: FundamentalData = {
+      symbol,
+      name: symbol,
+      market,
+      currency: market === 'ID' ? 'IDR' : 'USD',
+      peRatio: null,
+      forwardPE: null,
+      pbRatio: null,
+      psRatio: null,
+      pegRatio: null,
+      evToEbitda: null,
+      roe: null,
+      roa: null,
+      netProfitMargin: null,
+      grossMargin: null,
+      operatingMargin: null,
+      revenueGrowth: null,
+      earningsGrowth: null,
+      epsGrowthCurrentYear: null,
+      epsGrowthNext5Y: null,
+      debtToEquity: null,
+      currentRatio: null,
+      freeCashFlow: null,
+      dividendYield: null,
+      payoutRatio: null,
+      marketCap: null,
+      avgVolume3M: null,
+      high52Week: null,
+      low52Week: null,
+      beta: null,
+      price: null,
+      sharesOutstanding: null,
+    };
+
+    fundamentalsCache.set(cacheKey, empty, CACHE_TTL.FUNDAMENTALS);
+    return empty;
+  }
 
   const sd = summary.summaryDetail || {};
   const ks = summary.defaultKeyStatistics || {};

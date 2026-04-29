@@ -7,7 +7,7 @@ import { TrendingUp, Calculator, Eye, BarChart3, PieChart, Search } from 'lucide
 const navItems = [
   { href: '/', label: 'Dashboard', icon: BarChart3 },
   { href: '/recommend', label: 'Recommendations', icon: TrendingUp },
-  { href: '/calculator', label: 'Lot Calculator', icon: Calculator },
+  { href: '/calculator', label: 'Calculator', icon: Calculator },
   { href: '/watchlist', label: 'Watchlist', icon: Eye },
   { href: '/screener', label: 'Screener', icon: Search },
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
