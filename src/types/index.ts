@@ -71,7 +71,7 @@ export interface StockRecommendation {
 export interface LotCalculation {
   symbol: string;
   market: Market;
-  price: number;
+  price: number; // entry price used for sizing
   currency: string;
   initialFund: number;
   lotSize: number;
@@ -83,6 +83,19 @@ export interface LotCalculation {
   positionPercent: number;
   recommendedLots: number;
   recommendedReason: string;
+
+  // Risk-based sizing (optional if stopLoss not provided)
+  stopLossPrice?: number | null;
+  riskPercent?: number | null;
+  riskAmount?: number | null;
+  riskPerShare?: number | null;
+  maxLossAtStop?: number | null;
+
+  // Optional sizing options
+  strictRiskBasedOnly?: boolean | null;
+  bufferPercent?: number | null;
+  feePerShare?: number | null;
+  effectiveRiskPerShare?: number | null;
 }
 
 export interface WatchlistItem {

@@ -28,15 +28,6 @@ export default function CalculatorPage() {
           </div>
 
           <div>
-            <h3 className="font-bold text-white mb-1">The 15% Rule</h3>
-            <p>
-              A common guideline is to never invest more than 10-20% of your total capital in a
-              single stock. We use 15% as a balanced default. This ensures you can hold 6-7
-              different stocks for diversification.
-            </p>
-          </div>
-
-          <div>
             <h3 className="font-bold text-white mb-1">
               🇮🇩 Indonesian Market: Lot System
             </h3>
@@ -58,9 +49,14 @@ export default function CalculatorPage() {
           <div>
             <h3 className="font-bold text-white mb-1">Risk Per Trade</h3>
             <p>
-              Professional traders typically risk 1-2% of their total capital per trade. This means
-              if your stop-loss gets hit, you only lose 1-2% of your portfolio. Combined with proper
-              position sizing, this keeps you in the game long-term.
+              Professional traders typically risk 1-2% of their total capital per trade. The key
+              idea: your <strong>position size depends on your stop-loss distance</strong>. If your
+              stop-loss gets hit, the loss should be around your risk limit.
+            </p>
+            <p className="mt-2 text-gray-400">
+              Simple formula (long position): <strong>risk amount</strong> = capital × risk%, then{' '}
+              <strong>shares</strong> = risk amount ÷ (entry − stop). For IDX, the result is rounded
+              down to whole lots (1 lot = 100 shares).
             </p>
           </div>
         </div>
