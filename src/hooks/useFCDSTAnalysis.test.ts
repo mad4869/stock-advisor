@@ -10,7 +10,7 @@ import { DEFAULT_FCDST_THRESHOLDS } from '@/types/fcdst';
 const mockFundamentalData: FundamentalData = {
   symbol: 'DEMO',
   name: 'Demo Corp',
-  market: { id: 'idx', name: 'IDX', country: 'ID', currency: 'IDR', timezone: 'Asia/Jakarta' },
+  market: 'ID',
   currency: 'IDR',
   sector: 'Consumer',
   revenueGrowth: 20,
