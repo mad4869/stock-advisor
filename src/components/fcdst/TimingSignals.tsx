@@ -1,11 +1,11 @@
 import React from 'react';
-import { FCDSTScore, TechnicalData, VolumeAccumulationSignal } from '@/types/fcdst';
+import { TechnicalData, TScoreResult, VolumeAccumulationSignal } from '@/types/fcdst';
 import { calculateVolumeAccumulation } from '@/lib/fcdstEngine';
 import { CheckCircle, XCircle, AlertTriangle, Info, TrendingUp } from 'lucide-react';
 
 interface TimingSignalsProps {
   technicalData?: TechnicalData;
-  tScore?: FCDSTScore['tScore'];
+  tScore?: TScoreResult;
 }
 
 export function TimingSignals({ technicalData, tScore }: TimingSignalsProps) {

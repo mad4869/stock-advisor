@@ -1,3 +1,42 @@
+export interface FScoreDetails {
+  revenueGrowth: boolean;     // YoY >= 15%
+  netIncomeGrowth: boolean;   // YoY >= 15%
+  roe: boolean;               // >= 15%
+  netProfitMargin: boolean;   // >= 10%
+  grossProfitMargin: boolean; // >= 20%
+  bonusFcfPass: boolean;      // FCF positive (Bonus)
+}
+
+export interface CScoreDetails {
+  per: boolean;      // <= 15
+  pbv: boolean;      // <= 2
+  peg: boolean;      // <= 1
+  evEbitda: boolean; // <= 10
+}
+
+export interface DScoreDetails {
+  der: boolean | null;              // <= 1 (general), skip for banks
+  currentRatio: boolean | null;     // >= 1.5, skip for banks
+  interestCoverage: boolean | null; // >= 3
+  // Banking-specific
+  npl: boolean | null;  // <= 3%
+  car: boolean | null;  // >= 12%
+}
+
+export interface SScoreDetails {
+  megatrend: boolean;
+  moat: boolean;
+  catalyst: boolean;
+}
+
+export type TScoreResult = {
+  priceAboveMA20: boolean;
+  rsiFavorable: boolean;
+  volumeSpike: boolean;
+  mosFavorable: boolean;
+  status: 'WAIT' | 'ACCUMULATE' | 'BUY ZONE' | 'Pending';
+} | undefined;
+
 export type DScoreResult = {
   status: 'complete' | 'incomplete';
   score: number;
@@ -7,51 +46,22 @@ export type DScoreResult = {
 export interface FCDSTScore {
   // F: Fundamental (Max 5)
   fScore: number;
-  fDetails: {
-    revenueGrowth: boolean; // YoY > 15%
-    netIncomeGrowth: boolean; // YoY > 15%
-    roe: boolean; // > 15%
-    netProfitMargin: boolean; // > 10%
-    grossProfitMargin: boolean; // >= 20%
-    bonusFcfPass: boolean; // FCF positive (Bonus)
-  };
+  fDetails: FScoreDetails;
 
   // C: Cheap (Max 4)
   cScore: number;
-  cDetails: {
-    per: boolean; // < 15
-    pbv: boolean; // < 2
-    peg: boolean; // < 1
-    evEbitda: boolean; // < 10
-  };
+  cDetails: CScoreDetails;
 
   // D: Debt (Max 3)
   dScore: DScoreResult;
-  dDetails: {
-    der: boolean | null; // < 1 (0.5 non-financial), skip for banks
-    currentRatio: boolean | null; // > 1.5, skip for banks
-    interestCoverage: boolean | null; // > 3
-    // Banking specific
-    npl: boolean | null; // < 3%
-    car: boolean | null; // > 12%
-  };
+  dDetails: DScoreDetails;
 
   // S: Story (Max 3)
   sScore: number | 'Incomplete' | 'Pending';
-  sDetails: {
-    megatrend: boolean;
-    moat: boolean;
-    catalyst: boolean;
-  };
+  sDetails: SScoreDetails;
 
   // T: Timing (Not scored out of 15, used for action)
-  tScore?: {
-    priceAboveMA20: boolean;
-    rsiFavorable: boolean;
-    volumeSpike: boolean;
-    mosFavorable: boolean;
-    status: 'WAIT' | 'ACCUMULATE' | 'BUY ZONE' | 'Pending';
-  };
+  tScore?: TScoreResult;
 
   // Total out of 15
   totalScore: number | 'Incomplete';

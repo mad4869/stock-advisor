@@ -1,5 +1,5 @@
 import { FundamentalData } from '@/types/screener';
-import { FCDSTScore, FCDSTThresholds, DEFAULT_FCDST_THRESHOLDS, DScoreResult, TechnicalData, VolumeAccumulationSignal } from '@/types/fcdst';
+import { FCDSTScore, FCDSTThresholds, DEFAULT_FCDST_THRESHOLDS, DScoreResult, TechnicalData, TScoreResult, VolumeAccumulationSignal } from '@/types/fcdst';
 import { isBankingSector } from './sectorUtils';
 
 /**
@@ -164,7 +164,7 @@ export function computeTotalFCDSTScore(
   return { totalScore: total, grade };
 }
 
-export function calculateTScore(data?: TechnicalData): FCDSTScore['tScore'] {
+export function calculateTScore(data?: TechnicalData): TScoreResult {
   if (!data) return undefined;
 
   const priceAboveMA20 = data.price >= data.ma20;
