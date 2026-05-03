@@ -103,6 +103,26 @@ interface PortfolioStore {
     getSnapshotsByRange: (days: number) => PortfolioSnapshot[];
 }
 
+export const CURRENT_SCHEMA_VERSION = 2;
+
+export const migratePortfolioState = (persistedState: any, version: number) => {
+    if (version < 2) {
+        // v1 -> v2: Add FCDS-T nullable fields to closedPositions
+        const state = persistedState as any;
+        if (state.closedPositions) {
+            state.closedPositions = state.closedPositions.map((pos: any) => ({
+                ...pos,
+                fcdstScoreAtBuy: pos.fcdstScoreAtBuy ?? null,
+                fcdstScoreAtSell: pos.fcdstScoreAtSell ?? null,
+                lessonLearned: pos.lessonLearned ?? null,
+                thesisAccuracy: pos.thesisAccuracy ?? null,
+            }));
+        }
+        return state;
+    }
+    return persistedState as any;
+};
+
 export const usePortfolioStore = create<PortfolioStore>()(
     persist(
         (set, get) => ({
@@ -225,6 +245,8 @@ export const usePortfolioStore = create<PortfolioStore>()(
         }),
         {
             name: 'stock-portfolio',
+            version: CURRENT_SCHEMA_VERSION,
+            migrate: migratePortfolioState,
         }
     )
 );

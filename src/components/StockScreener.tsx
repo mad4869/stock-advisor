@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { Market } from '@/types';
 import {
   ScreenerFilters,
@@ -39,7 +40,14 @@ import {
   Target,
   LineChart,
   Banknote,
+  Navigation,
 } from 'lucide-react';
+import { useBankingMetricsStore } from '@/lib/bankingMetricsStore';
+import { useStoryAnalysisStore, computeStoryScore } from '@/lib/storyAnalysisStore';
+import { calculateFCDSTScore, computeTotalFCDSTScore } from '@/lib/fcdstEngine';
+import { isBankingSector } from '@/lib/sectorUtils';
+import { DEFAULT_FCDST_THRESHOLDS } from '@/types/fcdst';
+import { useRouter } from 'next/navigation';
 
 // ============================================================
 // Helpers
@@ -93,6 +101,8 @@ const CATEGORIES = [
 // ============================================================
 
 export default function StockScreener() {
+  const router = useRouter();
+
   // State
   const [market, setMarket] = useState<Market>('US');
   const [selectedPreset, setSelectedPreset] = useState<string | null>('graham');
@@ -109,6 +119,16 @@ export default function StockScreener() {
     totalMatched: number;
     errors: string[];
   } | null>(null);
+
+  // FCDS-T Filter State
+  const [minFcdstScore, setMinFcdstScore] = useState<number | ''>('');
+  const [fcdstGrades, setFcdstGrades] = useState<string[]>([]);
+  const [hideIncomplete, setHideIncomplete] = useState(false);
+  const [fcdstCache, setFcdstCache] = useState<Map<string, any>>(new Map());
+
+  // Global stores for scoring
+  const allBankingMetrics = useBankingMetricsStore(state => state.metrics);
+  const allStoryAnalyses = useStoryAnalysisStore(state => state.analyses);
 
   // Drill-in state
   const [selected, setSelected] = useState<{ symbol: string; market: Market } | null>(null);
@@ -249,6 +269,60 @@ export default function StockScreener() {
       setSortDirection('asc');
     }
   };
+
+  const computeScoreForSymbol = useCallback((result: ScreenerResult) => {
+    const sym = result.stock.symbol;
+    const isBank = isBankingSector(result.stock.sector || null);
+    const bMetrics = allBankingMetrics[sym];
+    const sAnalysis = allStoryAnalyses[sym];
+    
+    const rawScore = calculateFCDSTScore(
+      result.stock,
+      bMetrics?.npl ?? null,
+      bMetrics?.car ?? null,
+      DEFAULT_FCDST_THRESHOLDS,
+      isBank
+    );
+    const sScoreRaw = computeStoryScore(sAnalysis);
+    const totalScoreObj = computeTotalFCDSTScore(rawScore.fScore, rawScore.cScore, rawScore.dScore, sScoreRaw);
+    
+    return {
+      totalScore: totalScoreObj.totalScore,
+      grade: totalScoreObj.grade,
+      sScorePending: sScoreRaw === 'Pending',
+      isComplete: totalScoreObj.totalScore !== 'Incomplete' && sScoreRaw !== 'Pending'
+    };
+  }, [allBankingMetrics, allStoryAnalyses]);
+
+  // Apply FCDS-T Filters AFTER standard screening
+  const finalResults = useMemo(() => {
+    if (!sortedResults) return null;
+    let filtered = sortedResults;
+    
+    const hasFcdstFilters = minFcdstScore !== '' || fcdstGrades.length > 0 || hideIncomplete;
+    
+    if (hasFcdstFilters) {
+      filtered = filtered.filter(r => {
+        const sym = r.stock.symbol;
+        let score = fcdstCache.get(sym);
+        if (!score) {
+          score = computeScoreForSymbol(r);
+          // Don't trigger setState during render, just use it for filtering.
+          // The IntersectionObserver will update the actual state later if needed, 
+          // or we can just rely on the fallback.
+        }
+        
+        if (hideIncomplete && !score.isComplete) return false;
+        if (minFcdstScore !== '' && (score.totalScore === 'Incomplete' || score.totalScore < Number(minFcdstScore))) return false;
+        if (fcdstGrades.length > 0) {
+          const letterGrade = typeof score.grade === 'string' ? score.grade.split(' ')[0].replace(/[^A-D+]/g, '') : '';
+          if (!fcdstGrades.includes(letterGrade)) return false;
+        }
+        return true;
+      });
+    }
+    return filtered;
+  }, [sortedResults, minFcdstScore, fcdstGrades, hideIncomplete, fcdstCache, computeScoreForSymbol]);
 
   // Columns to display in the results table (only active filters + symbol)
   const displayColumns = useMemo(() => {
@@ -545,8 +619,67 @@ export default function StockScreener() {
         </div>
       )}
 
-      {/* Results Table */}
+      {/* FCDS-T Post-Filters */}
       {sortedResults && sortedResults.length > 0 && (
+        <div className="card space-y-4">
+          <div className="flex items-center justify-between border-b border-dark-700 pb-2">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Target className="w-4 h-4 text-blue-400" />
+              FCDS-T Analysis Filters
+            </h3>
+            <div className="text-xs text-gray-400">
+              Applied instantly to {screenStats?.totalMatched || sortedResults.length} results
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Min Total Score (0-15)</label>
+              <input 
+                type="number" 
+                min="0" max="15" 
+                value={minFcdstScore} 
+                onChange={e => setMinFcdstScore(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="e.g. 10"
+                className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Allowed Grades</label>
+              <div className="flex flex-wrap gap-2">
+                {['A+', 'A', 'B', 'C', 'D'].map(grade => (
+                  <button 
+                    key={grade}
+                    onClick={() => setFcdstGrades(prev => prev.includes(grade) ? prev.filter(g => g !== grade) : [...prev, grade])}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+                      fcdstGrades.includes(grade) 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-dark-800 border border-dark-600 text-gray-400 hover:bg-dark-700 hover:text-gray-200'
+                    }`}
+                  >
+                    {grade}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center sm:pt-6">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={hideIncomplete}
+                  onChange={e => setHideIncomplete(e.target.checked)}
+                  className="w-4 h-4 rounded border-dark-600 bg-dark-900 text-blue-500 focus:ring-blue-500 focus:ring-offset-dark-950"
+                />
+                <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                  Hide Incomplete & Pending
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Results Table */}
+      {finalResults && finalResults.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 card p-0 overflow-hidden">
             <div className="overflow-x-auto scrollbar-thin">
@@ -578,15 +711,16 @@ export default function StockScreener() {
                       </button>
                     </th>
                   ))}
+                  <th className="text-center py-3 px-4 whitespace-nowrap text-blue-400 font-bold">FCDS-T</th>
+                  <th className="text-right py-3 px-4 whitespace-nowrap">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedResults.map((result) => (
-                  <tr
+                {finalResults.map((result) => (
+                  <ScreenerRow
                     key={result.stock.symbol}
-                    className={`border-b border-dark-700 hover:bg-dark-800 transition-colors cursor-pointer ${
-                      selected?.symbol === result.stock.symbol ? 'bg-blue-600/10' : ''
-                    }`}
+                    result={result}
+                    selected={selected?.symbol === result.stock.symbol}
                     onClick={() => {
                       setSelected({ symbol: result.stock.symbol, market: result.stock.market });
                       setActiveModule('score');
@@ -594,41 +728,11 @@ export default function StockScreener() {
                       setAnalysisData(null);
                       setDcfData(null);
                     }}
-                  >
-                    <td className="py-3 px-4 sticky left-0 bg-dark-700 z-10">
-                      <div>
-                        <span className="font-bold text-white">
-                          {result.stock.symbol}
-                        </span>
-                        <span className="text-[10px] text-gray-600 ml-1.5">
-                          {result.stock.market === 'ID' ? '🇮🇩' : '🇺🇸'}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-gray-500 truncate max-w-[140px]">
-                        {result.stock.name}
-                      </p>
-                    </td>
-                    {displayColumns.map((col) => {
-                      const value = result.stock[col.key] as number | null;
-                      const range = filters[col.key];
-                      const status = getValueStatus(value, range, col);
-
-                      return (
-                        <td
-                          key={col.key}
-                          className={`py-3 px-3 text-right whitespace-nowrap font-medium ${
-                            status === 'good'
-                              ? 'text-green-400'
-                              : status === 'bad'
-                              ? 'text-red-400'
-                              : 'text-gray-300'
-                          }`}
-                        >
-                          {formatMetricValue(value, col)}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                    displayColumns={displayColumns}
+                    filters={filters}
+                    computeScoreForSymbol={computeScoreForSymbol}
+                    cachedScore={fcdstCache.get(result.stock.symbol)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -852,4 +956,118 @@ function getValueStatus(
 
   if (withinMin && withinMax) return 'good';
   return 'bad';
+}
+
+// ============================================================
+// Screener Row Component with Lazy FCDS-T Computation
+// ============================================================
+function ScreenerRow({ 
+  result, 
+  selected, 
+  onClick, 
+  displayColumns, 
+  filters, 
+  computeScoreForSymbol, 
+  cachedScore 
+}: { 
+  result: ScreenerResult;
+  selected: boolean;
+  onClick: () => void;
+  displayColumns: any[];
+  filters: any;
+  computeScoreForSymbol: (r: ScreenerResult) => any;
+  cachedScore: any;
+}) {
+  const [score, setScore] = useState(cachedScore);
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  useEffect(() => {
+    if (score) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setScore(computeScoreForSymbol(result));
+        observer.disconnect();
+      }
+    });
+    if (rowRef.current) observer.observe(rowRef.current);
+    return () => observer.disconnect();
+  }, [score, computeScoreForSymbol, result]);
+
+  return (
+    <tr
+      ref={rowRef}
+      className={`border-b border-dark-700 hover:bg-dark-800 transition-colors cursor-pointer ${
+        selected ? 'bg-blue-600/10' : ''
+      }`}
+      onClick={onClick}
+    >
+      <td className="py-3 px-4 sticky left-0 bg-dark-700 z-10">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="font-bold text-white">
+              {result.stock.symbol}
+            </span>
+            <span className="text-[10px] text-gray-600 ml-1.5">
+              {result.stock.market === 'ID' ? '🇮🇩' : '🇺🇸'}
+            </span>
+          </div>
+        </div>
+        <p className="text-[10px] text-gray-500 truncate max-w-[140px]">
+          {result.stock.name}
+        </p>
+      </td>
+      {displayColumns.map((col) => {
+        const value = result.stock[col.key] as number | null;
+        const range = filters[col.key];
+        const status = getValueStatus(value, range, col);
+
+        return (
+          <td
+            key={col.key}
+            className={`py-3 px-3 text-right whitespace-nowrap font-medium ${
+              status === 'good'
+                ? 'text-green-400'
+                : status === 'bad'
+                ? 'text-red-400'
+                : 'text-gray-300'
+            }`}
+          >
+            {formatMetricValue(value, col)}
+          </td>
+        );
+      })}
+      
+      {/* FCDS-T Column */}
+      <td className="py-3 px-4 text-center whitespace-nowrap">
+        {score ? (
+          <div className="flex flex-col items-center">
+            <span className="text-sm font-bold text-white">
+              {score.totalScore === 'Incomplete' ? 'Inc.' : `${score.totalScore}/15${score.sScorePending ? '*' : ''}`}
+            </span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+              score.grade.startsWith('A') ? 'bg-green-500/20 text-green-400' :
+              score.grade.startsWith('B') ? 'bg-blue-500/20 text-blue-400' :
+              score.grade.startsWith('C') ? 'bg-yellow-500/20 text-yellow-400' :
+              'bg-red-500/20 text-red-400'
+            }`}>
+              {score.grade.split(' ')[0]}{score.sScorePending ? '*' : ''}
+            </span>
+          </div>
+        ) : (
+          <div className="animate-pulse bg-dark-600 h-6 w-12 rounded mx-auto"></div>
+        )}
+      </td>
+      
+      {/* Action Column */}
+      <td className="py-3 px-4 text-right">
+        <Link 
+          href={`/screener/${result.stock.symbol}/analyze`}
+          className="inline-flex items-center gap-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-colors px-3 py-1.5 rounded-lg text-xs font-bold"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Analyze <Navigation className="w-3 h-3" />
+        </Link>
+      </td>
+    </tr>
+  );
 }

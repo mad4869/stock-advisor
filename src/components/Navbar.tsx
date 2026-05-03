@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TrendingUp, Calculator, Eye, BarChart3, PieChart, Search } from 'lucide-react';
+import { TrendingUp, Calculator, Eye, BarChart3, PieChart, Search, Settings } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: BarChart3 },
@@ -11,6 +11,7 @@ const navItems = [
   { href: '/watchlist', label: 'Watchlist', icon: Eye },
   { href: '/screener', label: 'Screener', icon: Search },
   { href: '/portfolio', label: 'Portfolio', icon: PieChart },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Navbar() {

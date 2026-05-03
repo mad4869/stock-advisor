@@ -7,6 +7,7 @@ export interface FundamentalData {
   name: string;
   market: Market;
   currency: string;
+  sector?: string | null;
 
   // Valuation
   peRatio: number | null;         // Trailing P/E (TTM)
@@ -33,6 +34,11 @@ export interface FundamentalData {
   debtToEquity: number | null;    // Debt/Equity ratio
   currentRatio: number | null;    // Current Ratio
   freeCashFlow: number | null;    // Free Cash Flow (absolute)
+  interestCoverage?: number | null; // Operating Income / Interest Expense
+  
+  // Banking specific
+  npl?: number | null;            // Non-Performing Loans (%)
+  car?: number | null;            // Capital Adequacy Ratio (%)
 
   // Income & Size
   dividendYield: number | null;   // Dividend Yield (%)

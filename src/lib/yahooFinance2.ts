@@ -112,7 +112,7 @@ export async function getStockFundamentals2(
   let summary: any;
   try {
     summary = await yahooFinance.quoteSummary(ySymbol, {
-      modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData'],
+      modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData', 'assetProfile'],
     });
   } catch (err: any) {
     // For some tickers (often IDX names, delisted symbols, etc.) Yahoo returns no fundamentals.
@@ -122,6 +122,7 @@ export async function getStockFundamentals2(
       name: symbol,
       market,
       currency: market === 'ID' ? 'IDR' : 'USD',
+      sector: null,
       peRatio: null,
       forwardPE: null,
       pbRatio: null,
@@ -149,6 +150,8 @@ export async function getStockFundamentals2(
       beta: null,
       price: null,
       sharesOutstanding: null,
+      npl: null,
+      car: null,
     };
 
     fundamentalsCache.set(cacheKey, empty, CACHE_TTL.FUNDAMENTALS);
@@ -158,6 +161,7 @@ export async function getStockFundamentals2(
   const sd = summary.summaryDetail || {};
   const ks = summary.defaultKeyStatistics || {};
   const fd = summary.financialData || {};
+  const ap = summary.assetProfile || {};
 
   const r = (v: any): number | null => {
     if (v == null) return null;
@@ -175,6 +179,7 @@ export async function getStockFundamentals2(
     name: symbol,
     market,
     currency: market === 'ID' ? 'IDR' : 'USD',
+    sector: ap.sector || null,
     peRatio: r(sd.trailingPE),
     forwardPE: r(sd.forwardPE),
     pbRatio: r(sd.priceToBook),
@@ -202,6 +207,8 @@ export async function getStockFundamentals2(
     beta: r(sd.beta) ?? r(ks.beta),
     price: r(fd.currentPrice),
     sharesOutstanding: r(ks.sharesOutstanding) ?? r(sd.impliedSharesOutstanding) ?? null,
+    npl: null,
+    car: null,
   };
 
   fundamentalsCache.set(cacheKey, result, CACHE_TTL.FUNDAMENTALS);
@@ -300,6 +307,7 @@ export async function getComprehensiveAnalysis2(
     name: profile.name,
     market,
     currency: market === 'ID' ? 'IDR' : 'USD',
+    sector: profile.sector || null,
     peRatio: r(sd.trailingPE),
     forwardPE: r(sd.forwardPE),
     pbRatio: r(sd.priceToBook),
@@ -327,6 +335,8 @@ export async function getComprehensiveAnalysis2(
     beta: r(sd.beta) ?? r(ks.beta),
     price: r(fd.currentPrice),
     sharesOutstanding: r(ks.sharesOutstanding) ?? r(sd.impliedSharesOutstanding) ?? null,
+    npl: null,
+    car: null,
   };
 
   // ---- Income Statements ----

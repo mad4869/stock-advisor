@@ -1,3 +1,5 @@
+export * from './fcdst';
+import { DScoreResult } from './fcdst';
 export type Market = 'US' | 'ID';
 
 export interface StockQuote {
@@ -114,6 +116,24 @@ export interface WatchlistItem {
   action: Signal;
   actionReason: string;
   lastUpdated: string;
+  fcdstScore?: {
+    totalScore: number | 'Incomplete';
+    grade: string;
+    fScore: number;
+    cScore: number;
+    dScore: DScoreResult;
+    sScore: number | null;
+    snapshotDate: number;
+  } | null;
+  thesis?: {
+    summary: string;
+    megatrendNote?: string;
+    moatNote?: string;
+    catalystNote?: string;
+    fairValue?: number;
+    targetReturn?: number;
+    holdPeriod?: string;
+  } | null;
 }
 
 export interface PopularStock {
@@ -196,4 +216,16 @@ export interface ClosedPosition {
   exitReason?: 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL';
   followedPlan?: boolean;
   planAnalysis?: string;
+  fcdstScoreAtBuy?: {
+    totalScore: number | 'Incomplete';
+    grade: string;
+    snapshotDate: number;
+  } | null;
+  fcdstScoreAtSell?: {
+    totalScore: number | 'Incomplete';
+    grade: string;
+    snapshotDate: number;
+  } | null;
+  lessonLearned?: string | null;
+  thesisAccuracy?: 'correct' | 'partially_correct' | 'wrong' | null;
 }

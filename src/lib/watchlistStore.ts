@@ -15,6 +15,23 @@ interface WatchlistStore {
   clearAll: () => void;
 }
 
+export const CURRENT_SCHEMA_VERSION = 2;
+
+export const migrateWatchlistState = (persistedState: any, version: number) => {
+  if (version < 2) {
+    const state = persistedState as any;
+    if (state.items) {
+      state.items = state.items.map((item: any) => ({
+        ...item,
+        fcdstScore: item.fcdstScore ?? null,
+        thesis: item.thesis ?? null,
+      }));
+    }
+    return state;
+  }
+  return persistedState as any;
+};
+
 export const useWatchlistStore = create<WatchlistStore>()(
   persist(
     (set) => ({
@@ -49,6 +66,8 @@ export const useWatchlistStore = create<WatchlistStore>()(
     }),
     {
       name: 'stock-watchlist',
+      version: CURRENT_SCHEMA_VERSION,
+      migrate: migrateWatchlistState,
     }
   )
 );

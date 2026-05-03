@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
@@ -715,7 +715,8 @@ function ClosedPositionsTable({
                             .slice()
                             .reverse()
                             .map((pos) => (
-                                <tr key={pos.id} className="border-b border-dark-700 hover:bg-dark-800">
+                                <React.Fragment key={pos.id}>
+                                    <tr className="border-b border-dark-700 hover:bg-dark-800">
                                     <td className="py-2.5 px-3 font-medium text-white">{pos.symbol}</td>
                                     <td className="py-2.5 px-3 text-right text-gray-400">
                                         {formatCurrency(pos.buyPrice, market)}
@@ -761,7 +762,26 @@ function ClosedPositionsTable({
                                         {pos.followedPlan === false ? ' ✕' : pos.followedPlan === true ? ' ✓' : ''}
                                     </td>
                                     <td className="py-2.5 px-3 text-right text-gray-500">{pos.sellDate}</td>
-                                </tr>
+                                    </tr>
+                                    {!pos.lessonLearned && (
+                                        <tr className="border-b border-dark-700 bg-dark-800/30">
+                                            <td colSpan={10} className="py-3 px-4">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-lg">📝</span>
+                                                        <p className="text-xs text-gray-400">No investment thesis recorded for this trade</p>
+                                                    </div>
+                                                    <button 
+                                                        className="text-xs font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-3 py-1.5 rounded transition-colors"
+                                                        onClick={() => alert('Inline form will be added in Commit 8')}
+                                                    >
+                                                        Add Retrospective Notes
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </React.Fragment>
                             ))}
                     </tbody>
                 </table>
