@@ -973,7 +973,7 @@ function ScreenerRow({
   result: ScreenerResult;
   selected: boolean;
   onClick: () => void;
-  displayColumns: any[];
+  displayColumns: FilterMeta[];
   filters: any;
   computeScoreForSymbol: (r: ScreenerResult) => any;
   cachedScore: any;
@@ -1017,7 +1017,7 @@ function ScreenerRow({
         </p>
       </td>
       {displayColumns.map((col) => {
-        const value = result.stock[col.key] as number | null;
+        const value = (result.stock as any)[col.key] as number | null;
         const range = filters[col.key];
         const status = getValueStatus(value, range, col);
 

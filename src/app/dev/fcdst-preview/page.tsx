@@ -60,7 +60,7 @@ const pendingStoryScore: FCDSTScore = {
 const mockFundamentalData: FundamentalData = {
   symbol: 'DEMO.JK',
   name: 'Demo Corp',
-  market: { id: 'idx', name: 'IDX', country: 'ID', currency: 'IDR', timezone: 'Asia/Jakarta' },
+  market: "ID",
   currency: 'IDR',
   sector: 'Consumer',
   revenueGrowth: 20,
@@ -199,7 +199,7 @@ export default function FCDSTDemoPage() {
                 fScore: completeScore.fScore,
                 cScore: completeScore.cScore,
                 dScore: completeScore.dScore,
-                sScore: completeScore.sScore,
+                sScore: typeof completeScore.sScore === 'number' ? completeScore.sScore : null,
                 snapshotDate: Date.now(),
               }}
               onCancel={() => undefined}

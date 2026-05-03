@@ -252,16 +252,16 @@ export function FCDSTStepper({ symbol, fundamentalData, technicalData, onComplet
                   <div className="mt-8 animate-slide-up">
                     <RecordBuyForm
                       symbol={symbol}
-                      market={fundamentalData.exchange === 'JKT' || symbol.endsWith('.JK') ? 'ID' : 'US'}
-                      currentPrice={fundamentalData.currentPrice ?? fundamentalData.price ?? 0}
-                      stockName={fundamentalData.companyName || symbol}
+                      market={fundamentalData.market}
+                      currentPrice={fundamentalData.price ?? 0}
+                      stockName={fundamentalData.name || symbol}
                       fcdstScoreSnapshot={{
                         totalScore: analysis.totalScore,
                         grade: analysis.grade,
                         fScore: analysis.fScore,
                         cScore: analysis.cScore,
                         dScore: analysis.dScore,
-                        sScore: analysis.sScore,
+                        sScore: typeof analysis.sScore === 'number' ? analysis.sScore : null,
                         snapshotDate: Date.now(),
                       }}
                       onCancel={() => setShowBuyForm(false)}
