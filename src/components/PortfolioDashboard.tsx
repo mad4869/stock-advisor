@@ -763,24 +763,6 @@ function ClosedPositionsTable({
                                     </td>
                                     <td className="py-2.5 px-3 text-right text-gray-500">{pos.sellDate}</td>
                                     </tr>
-                                    {!pos.lessonLearned && (
-                                        <tr className="border-b border-dark-700 bg-dark-800/30">
-                                            <td colSpan={10} className="py-3 px-4">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-lg">📝</span>
-                                                        <p className="text-xs text-gray-400">No investment thesis recorded for this trade</p>
-                                                    </div>
-                                                    <button 
-                                                        className="text-xs font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-3 py-1.5 rounded transition-colors"
-                                                        onClick={() => alert('Inline form will be added in Commit 8')}
-                                                    >
-                                                        Add Retrospective Notes
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
                                 </React.Fragment>
                             ))}
                     </tbody>

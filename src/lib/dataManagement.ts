@@ -1,16 +1,11 @@
 import { usePortfolioStore } from './portfolioStore';
 import { useWatchlistStore } from './watchlistStore';
-import { useBankingMetricsStore } from './bankingMetricsStore';
-import { useStoryAnalysisStore } from './storyAnalysisStore';
 import { useUserPreferencesStore } from './userPreferencesStore';
 
 export function exportAllData(): string {
   const portfolio = usePortfolioStore.getState();
   const watchlist = useWatchlistStore.getState();
-  const banking = useBankingMetricsStore.getState();
-  const story = useStoryAnalysisStore.getState();
   const preferences = useUserPreferencesStore.getState();
-
   const exportData = {
     exportVersion: 1,
     exportDate: Date.now(),
@@ -22,12 +17,6 @@ export function exportAllData(): string {
       },
       watchlist: {
         items: watchlist.items,
-      },
-      banking: {
-        metrics: banking.metrics,
-      },
-      story: {
-        analyses: story.analyses,
       },
       preferences: {
         analysisMode: preferences.analysisMode,
@@ -58,7 +47,7 @@ export function importAllData(jsonString: string): boolean {
     const parsed = JSON.parse(jsonString);
     if (!parsed || !parsed.data) throw new Error('Invalid backup file');
     
-    const { portfolio, watchlist, banking, story, preferences } = parsed.data;
+    const { portfolio, watchlist, preferences } = parsed.data;
 
     // We must use setState to safely merge/replace the state without destroying methods
     if (portfolio) {
@@ -75,17 +64,7 @@ export function importAllData(jsonString: string): boolean {
       });
     }
 
-    if (banking) {
-      useBankingMetricsStore.setState({
-        metrics: banking.metrics || {},
-      });
-    }
 
-    if (story) {
-      useStoryAnalysisStore.setState({
-        analyses: story.analyses || {},
-      });
-    }
 
     if (preferences && preferences.analysisMode) {
       useUserPreferencesStore.setState({

@@ -113,8 +113,10 @@ export default function LotCalculator() {
           <div>
             <label className="label">Stock Symbol</label>
             <StockSearch
-              market={market}
-              onSelect={(s) => setSymbol(s)}
+              onSelect={(sym, mkt) => {
+                setSymbol(sym);
+                setMarket(mkt);
+              }}
               placeholder={market === 'ID' ? 'e.g., BBCA, TLKM' : 'e.g., AAPL, MSFT'}
             />
           </div>

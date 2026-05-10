@@ -114,7 +114,6 @@ function AnalysisPageInner() {
           Search for a stock to analyze:
         </p>
         <StockSearch
-          market={market}
           onSelect={handleSelect}
           placeholder={`Search ${market === 'ID' ? 'Indonesian' : 'US'} stocks...`}
         />

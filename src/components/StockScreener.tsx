@@ -1,1073 +1,248 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import Link from 'next/link';
-import { Market } from '@/types';
-import {
-  ScreenerFilters,
-  ScreenerResult,
-  ScreenerResponse,
-  ScreenerPreset,
-  ScreenerFilterKey,
-  FilterRange,
-  FILTER_METADATA,
-  FilterMeta,
-} from '@/types/screener';
-import { SCREENER_PRESETS } from '@/lib/screenerPresets';
-import MarketToggle from './MarketToggle';
-import CompanyOverview from '@/components/analysis/CompanyOverview';
-import ValuationMetrics from '@/components/analysis/ValuationMetrics';
-import RedFlagsPanel from '@/components/analysis/RedFlagsPanel';
-import ScoreGauge from '@/components/score/ScoreGauge';
-import ScoreBreakdown from '@/components/score/ScoreBreakdown';
-import { CompositeScore } from '@/types/scoring';
-import { AnalysisResponse } from '@/types/analysis';
-import { DCFResult } from '@/types/dcf';
-import {
-  Search,
-  Filter,
-  Loader2,
-  AlertCircle,
-  TrendingUp,
-  TrendingDown,
-  ChevronDown,
-  ChevronUp,
-  X,
-  Plus,
-  RotateCcw,
-  CheckCircle2,
-  ArrowUpDown,
-  Target,
-  LineChart,
-  Banknote,
-  Navigation,
-} from 'lucide-react';
-import { useBankingMetricsStore } from '@/lib/bankingMetricsStore';
-import { useStoryAnalysisStore, computeStoryScore } from '@/lib/storyAnalysisStore';
-import { calculateFCDSTScore, computeTotalFCDSTScore } from '@/lib/fcdstEngine';
-import { isBankingSector } from '@/lib/sectorUtils';
-import { DEFAULT_FCDST_THRESHOLDS } from '@/types/fcdst';
+import React, { useState } from 'react';
+import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { Market } from '@/types';
 
-// ============================================================
-// Helpers
-// ============================================================
+type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE';
 
-function formatMetricValue(value: number | null, meta: FilterMeta): string {
-  if (value === null || value === undefined) return '—';
-
-  if (meta.key === 'marketCap') {
-    if (Math.abs(value) >= 1e12) return `${(value / 1e12).toFixed(1)}T`;
-    if (Math.abs(value) >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
-    if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
-    return value.toLocaleString();
-  }
-
-  if (meta.key === 'freeCashFlow') {
-    if (Math.abs(value) >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
-    if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
-    return value.toLocaleString();
-  }
-
-  if (meta.key === 'avgVolume3M') {
-    if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
-    if (value >= 1e3) return `${(value / 1e3).toFixed(0)}K`;
-    return value.toLocaleString();
-  }
-
-  if (meta.suffix === '%') return `${value.toFixed(1)}%`;
-  if (meta.suffix === 'x') return `${value.toFixed(1)}x`;
-  return value.toFixed(2);
+interface ScreenerResult {
+  symbol: string;
+  market: Market;
+  taScore: number;
+  smartMoney: {
+    passingMetrics: number;
+    availableMetrics: number;
+    isPass: boolean;
+  } | null;
+  signals: string[];
+  isPass: boolean;
 }
-
-type SortField = ScreenerFilterKey | 'symbol' | 'name';
-type SortDirection = 'asc' | 'desc';
-
-// ============================================================
-// Category config
-// ============================================================
-
-const CATEGORIES = [
-  { id: 'valuation', label: 'Valuation', emoji: '💰' },
-  { id: 'profitability', label: 'Profitability', emoji: '📊' },
-  { id: 'growth', label: 'Growth', emoji: '🚀' },
-  { id: 'health', label: 'Financial Health', emoji: '🏦' },
-  { id: 'income', label: 'Income & Size', emoji: '💵' },
-  { id: 'trading', label: 'Trading', emoji: '📉' },
-] as const;
-
-// ============================================================
-// Main Component
-// ============================================================
 
 export default function StockScreener() {
   const router = useRouter();
+  const [marketTab, setMarketTab] = useState<Market>('US');
+  const [usUniverse, setUsUniverse] = useState('SP100');
+  const [idUniverse, setIdUniverse] = useState('LQ45');
+  const [preset, setPreset] = useState<Preset>('DEFAULT');
 
-  // State
-  const [market, setMarket] = useState<Market>('US');
-  const [selectedPreset, setSelectedPreset] = useState<string | null>('graham');
-  const [filters, setFilters] = useState<ScreenerFilters>(
-    SCREENER_PRESETS[0].filters
-  );
-  const [showFilters, setShowFilters] = useState(false);
-  const [additionalSymbols, setAdditionalSymbols] = useState('');
-  const [results, setResults] = useState<ScreenerResult[] | null>(null);
-  const [screening, setScreening] = useState(false);
+  const [results, setResults] = useState<ScreenerResult[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [screenStats, setScreenStats] = useState<{
-    totalScreened: number;
-    totalMatched: number;
-    errors: string[];
-  } | null>(null);
 
-  // FCDS-T Filter State
-  const [minFcdstScore, setMinFcdstScore] = useState<number | ''>('');
-  const [fcdstGrades, setFcdstGrades] = useState<string[]>([]);
-  const [hideIncomplete, setHideIncomplete] = useState(false);
-  const [fcdstCache, setFcdstCache] = useState<Map<string, any>>(new Map());
-
-  // Global stores for scoring
-  const allBankingMetrics = useBankingMetricsStore(state => state.metrics);
-  const allStoryAnalyses = useStoryAnalysisStore(state => state.analyses);
-
-  // Drill-in state
-  const [selected, setSelected] = useState<{ symbol: string; market: Market } | null>(null);
-  const [activeModule, setActiveModule] = useState<'score' | 'analysis' | 'valuation'>('score');
-  const [scoreData, setScoreData] = useState<CompositeScore | null>(null);
-  const [analysisData, setAnalysisData] = useState<AnalysisResponse | null>(null);
-  const [dcfData, setDcfData] = useState<DCFResult | null>(null);
-  const [moduleLoading, setModuleLoading] = useState(false);
-  const [moduleError, setModuleError] = useState<string | null>(null);
-
-  // Sort state
-  const [sortField, setSortField] = useState<SortField>('symbol');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-
-  // Apply preset
-  const applyPreset = useCallback((preset: ScreenerPreset) => {
-    setSelectedPreset(preset.id);
-    setFilters({ ...preset.filters });
-  }, []);
-
-  // Update a single filter
-  const updateFilter = useCallback(
-    (key: ScreenerFilterKey, bound: 'min' | 'max', value: string) => {
-      setSelectedPreset('custom');
-      setFilters((prev) => {
-        const existing = prev[key] || {};
-        const parsed = value === '' ? undefined : parseFloat(value);
-        const updated: FilterRange = { ...existing, [bound]: parsed };
-
-        // Remove the filter entirely if both min and max are undefined
-        if (updated.min === undefined && updated.max === undefined) {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        }
-
-        return { ...prev, [key]: updated };
-      });
-    },
-    []
-  );
-
-  // Clear all filters
-  const clearFilters = useCallback(() => {
-    setFilters({});
-    setSelectedPreset(null);
-  }, []);
-
-  // Active filter count
-  const activeFilterCount = useMemo(
-    () => Object.keys(filters).length,
-    [filters]
-  );
-
-  // Run screener
-  const runScreener = useCallback(async () => {
-    if (activeFilterCount === 0) {
-      setError('Please set at least one filter.');
-      return;
-    }
-
-    setScreening(true);
+  const handleRunScreen = async () => {
+    setLoading(true);
     setError('');
-    setResults(null);
-    setScreenStats(null);
+    setResults([]);
+
+    const universe = marketTab === 'US' ? usUniverse : idUniverse;
 
     try {
-      const extraSymbols = additionalSymbols
-        .split(/[,\s]+/)
-        .map((s) => s.trim().toUpperCase())
-        .filter(Boolean);
-
-      const res = await fetch('/api/screener', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          market,
-          filters,
-          additionalSymbols: extraSymbols.length > 0 ? extraSymbols : undefined,
-        }),
-      });
-
-      const data: ScreenerResponse = await res.json();
-
+      const res = await fetch(`/api/screener?market=${marketTab}&universe=${universe}&preset=${preset}`);
+      const data = await res.json();
+      
       if (!res.ok) {
-        throw new Error((data as any).error || 'Screener request failed');
+        throw new Error(data.error || 'Failed to run screener');
       }
 
-      setResults(data.results);
-      setScreenStats({
-        totalScreened: data.totalScreened,
-        totalMatched: data.totalMatched,
-        errors: data.errors,
-      });
+      setResults(data.results || []);
     } catch (err: any) {
-      setError(err.message || 'Failed to run screener');
+      setError(err.message);
     } finally {
-      setScreening(false);
-    }
-  }, [market, filters, additionalSymbols, activeFilterCount]);
-
-  // Sort results
-  const sortedResults = useMemo(() => {
-    if (!results) return null;
-    return [...results].sort((a, b) => {
-      let aVal: any, bVal: any;
-
-      if (sortField === 'symbol') {
-        aVal = a.stock.symbol;
-        bVal = b.stock.symbol;
-      } else if (sortField === 'name') {
-        aVal = a.stock.name;
-        bVal = b.stock.name;
-      } else {
-        aVal = a.stock[sortField] ?? null;
-        bVal = b.stock[sortField] ?? null;
-      }
-
-      // Nulls go to bottom
-      if (aVal === null && bVal === null) return 0;
-      if (aVal === null) return 1;
-      if (bVal === null) return -1;
-
-      if (typeof aVal === 'string') {
-        const cmp = aVal.localeCompare(bVal);
-        return sortDirection === 'asc' ? cmp : -cmp;
-      }
-
-      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-    });
-  }, [results, sortField, sortDirection]);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
+      setLoading(false);
     }
   };
 
-  const computeScoreForSymbol = useCallback((result: ScreenerResult) => {
-    const sym = result.stock.symbol;
-    const isBank = isBankingSector(result.stock.sector || null);
-    const bMetrics = allBankingMetrics[sym];
-    const sAnalysis = allStoryAnalyses[sym];
-    
-    const rawScore = calculateFCDSTScore(
-      result.stock,
-      bMetrics?.npl ?? null,
-      bMetrics?.car ?? null,
-      DEFAULT_FCDST_THRESHOLDS,
-      isBank
-    );
-    const sScoreRaw = computeStoryScore(sAnalysis);
-    const totalScoreObj = computeTotalFCDSTScore(rawScore.fScore, rawScore.cScore, rawScore.dScore, sScoreRaw);
-    
-    return {
-      totalScore: totalScoreObj.totalScore,
-      grade: totalScoreObj.grade,
-      sScorePending: sScoreRaw === 'Pending',
-      isComplete: totalScoreObj.totalScore !== 'Incomplete' && sScoreRaw !== 'Pending'
-    };
-  }, [allBankingMetrics, allStoryAnalyses]);
-
-  // Apply FCDS-T Filters AFTER standard screening
-  const finalResults = useMemo(() => {
-    if (!sortedResults) return null;
-    let filtered = sortedResults;
-    
-    const hasFcdstFilters = minFcdstScore !== '' || fcdstGrades.length > 0 || hideIncomplete;
-    
-    if (hasFcdstFilters) {
-      filtered = filtered.filter(r => {
-        const sym = r.stock.symbol;
-        let score = fcdstCache.get(sym);
-        if (!score) {
-          score = computeScoreForSymbol(r);
-          // Don't trigger setState during render, just use it for filtering.
-          // The IntersectionObserver will update the actual state later if needed, 
-          // or we can just rely on the fallback.
-        }
-        
-        if (hideIncomplete && !score.isComplete) return false;
-        if (minFcdstScore !== '' && (score.totalScore === 'Incomplete' || score.totalScore < Number(minFcdstScore))) return false;
-        if (fcdstGrades.length > 0) {
-          const letterGrade = typeof score.grade === 'string' ? score.grade.split(' ')[0].replace(/[^A-D+]/g, '') : '';
-          if (!fcdstGrades.includes(letterGrade)) return false;
-        }
-        return true;
-      });
-    }
-    return filtered;
-  }, [sortedResults, minFcdstScore, fcdstGrades, hideIncomplete, fcdstCache, computeScoreForSymbol]);
-
-  // Columns to display in the results table (only active filters + symbol)
-  const displayColumns = useMemo(() => {
-    const activeKeys = Object.keys(filters) as ScreenerFilterKey[];
-    return FILTER_METADATA.filter((m) => activeKeys.includes(m.key));
-  }, [filters]);
-
-  // Fetch selected module data
-  useEffect(() => {
-    async function run() {
-      if (!selected) return;
-      setModuleLoading(true);
-      setModuleError(null);
-
-      try {
-        if (activeModule === 'score') {
-          const res = await fetch(`/api/score?symbol=${selected.symbol}&market=${selected.market}`);
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'Failed to load score');
-          setScoreData(json.score);
-        } else if (activeModule === 'analysis') {
-          const res = await fetch(`/api/analysis?symbol=${selected.symbol}&market=${selected.market}`);
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'Failed to load analysis');
-          setAnalysisData(json);
-        } else if (activeModule === 'valuation') {
-          const res = await fetch(`/api/valuation?symbol=${selected.symbol}&market=${selected.market}`);
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'Failed to load valuation');
-          setDcfData(json.dcf);
-        }
-      } catch (err: any) {
-        setModuleError(err.message || 'Failed to load module');
-      } finally {
-        setModuleLoading(false);
-      }
-    }
-
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.symbol, selected?.market, activeModule]);
+  const handleRowClick = (symbol: string) => {
+    router.push(`/stock/${symbol.replace('.JK', '')}?market=${marketTab}`);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Market Selector */}
-      <div className="card">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-bold text-white mb-1">Market</h3>
-            <p className="text-xs text-gray-500">
-              Select the market to screen stocks from
-            </p>
-          </div>
-          <MarketToggle market={market} onChange={setMarket} />
-        </div>
-
-        {/* Additional Symbols (for US market especially) */}
-        <div className="mt-4">
-          <label className="label">
-            Additional Symbols{' '}
-            <span className="text-gray-600">(comma-separated)</span>
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={additionalSymbols}
-              onChange={(e) => setAdditionalSymbols(e.target.value)}
-              placeholder="e.g. AMD, NFLX, DIS"
-              className="input-field text-sm py-2 flex-1"
-            />
-          </div>
-          <p className="text-[10px] text-gray-600 mt-1">
-            {market === 'US'
-              ? 'Default US universe has 10 popular stocks. Add more tickers above.'
-              : 'IDX universe has ~130 stocks. Add more if needed.'}
-          </p>
-        </div>
-      </div>
-
-      {/* Preset Selector */}
-      <div className="card">
-        <h3 className="text-sm font-bold text-white mb-3">
-          Screening Strategy
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {SCREENER_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => applyPreset(preset)}
-              className={`text-left p-4 rounded-xl border transition-all duration-200 ${
-                selectedPreset === preset.id
-                  ? 'bg-blue-600/15 border-blue-500/40 ring-1 ring-blue-500/30'
-                  : 'bg-dark-800 border-dark-600 hover:border-gray-500'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">{preset.emoji}</span>
-                <span className="text-sm font-bold text-white">
-                  {preset.name}
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                {preset.description}
-              </p>
-            </button>
-          ))}
-        </div>
-
-        {selectedPreset === 'custom' && (
-          <div className="mt-3 text-xs text-yellow-400 flex items-center gap-1">
-            <Filter className="w-3 h-3" />
-            Custom filters active — not using a preset
-          </div>
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="card">
+      {/* Market Tabs */}
+      <div className="flex items-center gap-4 border-b border-dark-600 pb-2">
         <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="w-full flex items-center justify-between"
+          onClick={() => { setMarketTab('US'); setResults([]); }}
+          className={`pb-2 px-2 text-lg font-bold border-b-2 transition-colors ${
+            marketTab === 'US'
+              ? 'border-blue-500 text-white'
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
         >
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-blue-400" />
-            <h3 className="text-sm font-bold text-white">
-              Filters{' '}
-              {activeFilterCount > 0 && (
-                <span className="text-blue-400 font-normal">
-                  ({activeFilterCount} active)
-                </span>
-              )}
-            </h3>
-          </div>
-          {showFilters ? (
-            <ChevronUp className="w-4 h-4 text-gray-400" />
+          🇺🇸 US Market
+        </button>
+        <button
+          onClick={() => { setMarketTab('ID'); setResults([]); }}
+          className={`pb-2 px-2 text-lg font-bold border-b-2 transition-colors ${
+            marketTab === 'ID'
+              ? 'border-blue-500 text-white'
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          🇮🇩 IDX Market
+        </button>
+      </div>
+
+      {/* Universe & Preset Selectors */}
+      <div className="flex flex-col sm:flex-row gap-4 items-end bg-dark-800 p-4 rounded-xl border border-dark-600">
+        <div className="flex-1 w-full">
+          <label className="block text-xs text-gray-400 mb-1">Stock Universe</label>
+          {marketTab === 'US' ? (
+            <select
+              value={usUniverse}
+              onChange={(e) => setUsUniverse(e.target.value)}
+              className="input-field py-2"
+            >
+              <option value="SP100">S&P 100 (Large Cap)</option>
+              <option value="TECH">Top US Tech</option>
+            </select>
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <select
+              value={idUniverse}
+              onChange={(e) => setIdUniverse(e.target.value)}
+              className="input-field py-2"
+            >
+              <option value="LQ45">LQ45 (Most Liquid)</option>
+              <option value="KOMPAS100">Kompas 100</option>
+            </select>
+          )}
+        </div>
+
+        <div className="flex-1 w-full">
+          <label className="block text-xs text-gray-400 mb-1">Preset Setup</label>
+          <select
+            value={preset}
+            onChange={(e) => setPreset(e.target.value as Preset)}
+            className="input-field py-2"
+          >
+            <option value="DEFAULT">Default (TA + Smart Money)</option>
+            <option value="BREAKOUT">Swing Breakout</option>
+            <option value="OVERSOLD">Oversold Bounce</option>
+            <option value="SMART_MONEY">Smart Money Follow</option>
+            <option value="VOLUME_CLIMAX">Volume Climax</option>
+            {marketTab === 'US' && <option value="SHORT_SQUEEZE">Short Squeeze</option>}
+          </select>
+        </div>
+        
+        <button 
+          onClick={handleRunScreen} 
+          disabled={loading}
+          className="btn-primary py-2 px-6 w-full sm:w-auto"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 inline animate-spin" />
+              Scanning...
+            </>
+          ) : (
+            <>
+              <Search className="w-4 h-4 mr-2 inline" />
+              Run Screen
+            </>
           )}
         </button>
-
-        {showFilters && (
-          <div className="mt-4 space-y-6 animate-fade-in">
-            {/* Clear button */}
-            <div className="flex justify-end">
-              <button
-                onClick={clearFilters}
-                className="text-xs text-gray-500 hover:text-white transition-colors flex items-center gap-1"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Clear All Filters
-              </button>
-            </div>
-
-            {CATEGORIES.map((cat) => {
-              const catFilters = FILTER_METADATA.filter(
-                (m) => m.category === cat.id
-              );
-              return (
-                <div key={cat.id}>
-                  <h4 className="text-xs font-bold text-gray-400 mb-2 flex items-center gap-1.5">
-                    <span>{cat.emoji}</span> {cat.label}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {catFilters.map((meta) => {
-                      const currentFilter = filters[meta.key];
-                      const isActive =
-                        currentFilter?.min !== undefined ||
-                        currentFilter?.max !== undefined;
-
-                      return (
-                        <div
-                          key={meta.key}
-                          className={`bg-dark-800 rounded-xl p-3 border transition-colors ${
-                            isActive
-                              ? 'border-blue-500/30'
-                              : 'border-dark-600'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-gray-300">
-                              {meta.label}
-                            </span>
-                            {isActive && (
-                              <button
-                                onClick={() => {
-                                  setSelectedPreset('custom');
-                                  setFilters((prev) => {
-                                    const next = { ...prev };
-                                    delete next[meta.key];
-                                    return next;
-                                  });
-                                }}
-                                className="text-gray-600 hover:text-red-400 transition-colors"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <div className="flex-1">
-                              <label className="text-[10px] text-gray-600 block mb-0.5">
-                                Min
-                              </label>
-                              <input
-                                type="number"
-                                value={currentFilter?.min ?? ''}
-                                onChange={(e) =>
-                                  updateFilter(meta.key, 'min', e.target.value)
-                                }
-                                placeholder="—"
-                                step={meta.step}
-                                className="w-full bg-dark-900 border border-dark-500 rounded-lg px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <label className="text-[10px] text-gray-600 block mb-0.5">
-                                Max
-                              </label>
-                              <input
-                                type="number"
-                                value={currentFilter?.max ?? ''}
-                                onChange={(e) =>
-                                  updateFilter(meta.key, 'max', e.target.value)
-                                }
-                                placeholder="—"
-                                step={meta.step}
-                                className="w-full bg-dark-900 border border-dark-500 rounded-lg px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 transition-colors"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
-      {/* Run Button */}
-      <button
-        onClick={runScreener}
-        disabled={screening || activeFilterCount === 0}
-        className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-base"
-      >
-        {screening ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Screening stocks...
-          </>
-        ) : (
-          <>
-            <Search className="w-5 h-5" />
-            Run Screener ({activeFilterCount} filter
-            {activeFilterCount !== 1 ? 's' : ''})
-          </>
-        )}
-      </button>
-
-      {/* Error */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-3 text-sm flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-4 text-sm">
           {error}
         </div>
       )}
 
-      {/* Results Summary */}
-      {screenStats && (
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-1.5 text-gray-400">
-            <Search className="w-4 h-4" />
-            <span>
-              Screened: <strong className="text-white">{screenStats.totalScreened}</strong>
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 text-green-400">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>
-              Matched: <strong>{screenStats.totalMatched}</strong>
-            </span>
-          </div>
-          {screenStats.errors.length > 0 && (
-            <div className="flex items-center gap-1.5 text-yellow-400">
-              <AlertCircle className="w-4 h-4" />
-              <span>
-                {screenStats.errors.length} error
-                {screenStats.errors.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* FCDS-T Post-Filters */}
-      {sortedResults && sortedResults.length > 0 && (
-        <div className="card space-y-4">
-          <div className="flex items-center justify-between border-b border-dark-700 pb-2">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Target className="w-4 h-4 text-blue-400" />
-              FCDS-T Analysis Filters
-            </h3>
-            <div className="text-xs text-gray-400">
-              Applied instantly to {screenStats?.totalMatched || sortedResults.length} results
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div>
-              <label className="text-xs text-gray-400 block mb-2">Min Total Score (0-15)</label>
-              <input 
-                type="number" 
-                min="0" max="15" 
-                value={minFcdstScore} 
-                onChange={e => setMinFcdstScore(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="e.g. 10"
-                className="w-full bg-dark-900 border border-dark-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-2">Allowed Grades</label>
-              <div className="flex flex-wrap gap-2">
-                {['A+', 'A', 'B', 'C', 'D'].map(grade => (
-                  <button 
-                    key={grade}
-                    onClick={() => setFcdstGrades(prev => prev.includes(grade) ? prev.filter(g => g !== grade) : [...prev, grade])}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
-                      fcdstGrades.includes(grade) 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-dark-800 border border-dark-600 text-gray-400 hover:bg-dark-700 hover:text-gray-200'
-                    }`}
-                  >
-                    {grade}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center sm:pt-6">
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input 
-                  type="checkbox" 
-                  checked={hideIncomplete}
-                  onChange={e => setHideIncomplete(e.target.checked)}
-                  className="w-4 h-4 rounded border-dark-600 bg-dark-900 text-blue-500 focus:ring-blue-500 focus:ring-offset-dark-950"
-                />
-                <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
-                  Hide Incomplete & Pending
-                </span>
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Results Table */}
-      {finalResults && finalResults.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 card p-0 overflow-hidden">
-            <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-dark-600 bg-dark-800">
-                  <th className="text-left py-3 px-4 sticky left-0 bg-dark-800 z-10">
-                    <button
-                      onClick={() => handleSort('symbol')}
-                      className="flex items-center gap-1 hover:text-white transition-colors"
-                    >
-                      Symbol
-                      {sortField === 'symbol' && (
-                        <SortIcon direction={sortDirection} />
-                      )}
-                    </button>
-                  </th>
-                  {displayColumns.map((col) => (
-                    <th key={col.key} className="text-right py-3 px-3 whitespace-nowrap">
-                      <button
-                        onClick={() => handleSort(col.key)}
-                        className="flex items-center gap-1 ml-auto hover:text-white transition-colors"
-                        title={col.description}
-                      >
-                        {col.shortLabel}
-                        {sortField === col.key && (
-                          <SortIcon direction={sortDirection} />
-                        )}
-                      </button>
-                    </th>
-                  ))}
-                  <th className="text-center py-3 px-4 whitespace-nowrap text-blue-400 font-bold">FCDS-T</th>
-                  <th className="text-right py-3 px-4 whitespace-nowrap">Action</th>
+      <div className="card">
+        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <span>Screener Results</span>
+          {results.length > 0 && (
+            <span className="text-xs bg-dark-600 text-gray-400 px-2 py-1 rounded">
+              {results.length} Passed
+            </span>
+          )}
+        </h3>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b border-dark-600">
+                <th className="py-3 px-4 font-semibold">Symbol</th>
+                <th className="py-3 px-4 font-semibold">TA Score</th>
+                <th className="py-3 px-4 font-semibold">Smart Money</th>
+                <th className="py-3 px-4 font-semibold">Signals</th>
+                <th className="py-3 px-4 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && results.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-gray-500">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
+                    Scanning {marketTab === 'US' ? usUniverse : idUniverse} for {preset} setups...<br/>
+                    <span className="text-xs">This may take 10-20 seconds for the initial fetch.</span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {finalResults.map((result) => (
-                  <ScreenerRow
-                    key={result.stock.symbol}
-                    result={result}
-                    selected={selected?.symbol === result.stock.symbol}
-                    onClick={() => {
-                      setSelected({ symbol: result.stock.symbol, market: result.stock.market });
-                      setActiveModule('score');
-                      setScoreData(null);
-                      setAnalysisData(null);
-                      setDcfData(null);
-                    }}
-                    displayColumns={displayColumns}
-                    filters={filters}
-                    computeScoreForSymbol={computeScoreForSymbol}
-                    cachedScore={fcdstCache.get(result.stock.symbol)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              )}
 
-          {/* Inline Modules Panel */}
-          <div className="lg:col-span-5">
-            {!selected ? (
-              <div className="card py-14 text-center">
-                <Target className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-gray-400 mb-2">Select a stock</h3>
-                <p className="text-sm text-gray-500">
-                  Click a screener result to run Score, Analysis, and Valuation right here.
-                </p>
-              </div>
-            ) : (
-              <div className="card space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-bold text-white">
-                      {selected.symbol}{' '}
-                      <span className="text-xs text-gray-500">
-                        {selected.market === 'ID' ? '🇮🇩' : '🇺🇸'}
+              {!loading && results.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-gray-500">
+                    <Info className="w-6 h-6 mx-auto mb-2 text-gray-600" />
+                    No stocks passed the current screening criteria.
+                  </td>
+                </tr>
+              )}
+
+              {!loading && results.map((result) => (
+                <tr 
+                  key={result.symbol}
+                  className="border-b border-dark-700 hover:bg-dark-800 cursor-pointer transition-colors"
+                  onClick={() => handleRowClick(result.symbol)}
+                >
+                  <td className="py-3 px-4">
+                    <div className="font-bold text-white">{result.symbol.replace('.JK', '')}</div>
+                    <div className="text-xs text-gray-500">{marketTab === 'US' ? '🇺🇸 US' : '🇮🇩 IDX'}</div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-500" 
+                          style={{ width: `${Math.min(100, Math.max(0, result.taScore))}%` }}
+                        />
+                      </div>
+                      <span className="text-gray-300 font-medium">{result.taScore}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    {result.smartMoney ? (
+                      <span className={`text-xs px-2 py-1 rounded ${result.smartMoney.isPass ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {result.smartMoney.passingMetrics} / {result.smartMoney.availableMetrics} Passed
                       </span>
-                    </h3>
-                    <p className="text-xs text-gray-500">Modules</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <a
-                      href={`/analysis?symbol=${selected.symbol}&market=${selected.market}`}
-                      className="text-gray-500 hover:text-white transition-colors"
-                    >
-                      Open full Analysis
-                    </a>
-                    <span className="text-gray-700">•</span>
-                    <a
-                      href={`/dcf?symbol=${selected.symbol}&market=${selected.market}`}
-                      className="text-gray-500 hover:text-white transition-colors"
-                    >
-                      Open full Valuation
-                    </a>
-                    <span className="text-gray-700">•</span>
-                    <a
-                      href={`/score?symbol=${selected.symbol}&market=${selected.market}`}
-                      className="text-gray-500 hover:text-white transition-colors"
-                    >
-                      Open full Score
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex items-center bg-dark-800 rounded-lg p-1 border border-dark-600">
-                  <button
-                    onClick={() => setActiveModule('score')}
-                    className={
-                      'flex-1 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-2 ' +
-                      (activeModule === 'score'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-400 hover:text-white')
-                    }
-                  >
-                    <Target className="w-3.5 h-3.5" />
-                    Score
-                  </button>
-                  <button
-                    onClick={() => setActiveModule('analysis')}
-                    className={
-                      'flex-1 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-2 ' +
-                      (activeModule === 'analysis'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-400 hover:text-white')
-                    }
-                  >
-                    <LineChart className="w-3.5 h-3.5" />
-                    Analysis
-                  </button>
-                  <button
-                    onClick={() => setActiveModule('valuation')}
-                    className={
-                      'flex-1 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-2 ' +
-                      (activeModule === 'valuation'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-400 hover:text-white')
-                    }
-                  >
-                    <Banknote className="w-3.5 h-3.5" />
-                    Valuation
-                  </button>
-                </div>
-
-                {moduleLoading && (
-                  <div className="flex items-center justify-center py-10 text-gray-500">
-                    <Loader2 className="w-6 h-6 animate-spin mr-3 text-blue-400" />
-                    Loading {activeModule}…
-                  </div>
-                )}
-
-                {moduleError && (
-                  <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-3 text-sm flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    {moduleError}
-                  </div>
-                )}
-
-                {!moduleLoading && !moduleError && activeModule === 'score' && scoreData && (
-                  <div className="space-y-4">
-                    <ScoreGauge score={scoreData.totalScore} recommendation={scoreData.recommendation} />
-                    <ScoreBreakdown score={scoreData} />
-                  </div>
-                )}
-
-                {!moduleLoading && !moduleError && activeModule === 'analysis' && analysisData?.analysis && (
-                  <div className="space-y-4">
-                    <RedFlagsPanel redFlags={analysisData.redFlags || []} />
-                    <CompanyOverview analysis={analysisData.analysis} />
-                    <ValuationMetrics fundamentals={analysisData.analysis.fundamentals} analystRating={analysisData.analysis.analystRating} />
-                  </div>
-                )}
-
-                {!moduleLoading && !moduleError && activeModule === 'valuation' && (
-                  <div className="space-y-3">
-                    {dcfData ? (
-                      <div className="bg-dark-800 rounded-xl p-4 border border-dark-600">
-                        <p className="text-xs text-gray-500 mb-2">Base-case DCF</p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-[10px] text-gray-500">Intrinsic Value / Share</p>
-                            <p className="text-lg font-bold text-white">
-                              {selected.market === 'ID' ? 'Rp' : '$'}
-                              {dcfData.intrinsicValuePerShare.toLocaleString(undefined, {
-                                maximumFractionDigits: selected.market === 'ID' ? 0 : 2,
-                              })}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[10px] text-gray-500">Margin of Safety</p>
-                            <p className={`text-lg font-bold ${dcfData.marginOfSafety >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {dcfData.marginOfSafety >= 0 ? '+' : ''}
-                              {dcfData.marginOfSafety.toFixed(1)}%
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-gray-500">WACC</p>
-                            <p className="text-sm font-bold text-gray-200">{dcfData.wacc.toFixed(2)}%</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[10px] text-gray-500">Verdict</p>
-                            <p className="text-sm font-bold text-blue-400">{dcfData.verdict}</p>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-gray-600 mt-3">
-                          Terminal value is {dcfData.terminalValuePercentOfEV.toFixed(0)}% of enterprise value.
-                        </p>
-                      </div>
                     ) : (
-                      <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 rounded-xl p-3 text-sm">
-                        DCF unavailable (typically due to negative/unknown free cash flow).
-                      </div>
+                      <span className="text-xs text-gray-500">N/A</span>
                     )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex flex-wrap gap-1">
+                      {result.signals.slice(0, 2).map((sig, idx) => (
+                        <span key={idx} className="text-[10px] bg-dark-600 text-gray-300 px-1.5 py-0.5 rounded border border-dark-500">
+                          {sig}
+                        </span>
+                      ))}
+                      {result.signals.length > 2 && (
+                        <span className="text-[10px] text-gray-500">+{result.signals.length - 2} more</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    <ChevronRight className="w-4 h-4 inline text-gray-500 group-hover:text-white" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
-
-      {/* No Results */}
-      {sortedResults && sortedResults.length === 0 && (
-        <div className="card text-center py-12">
-          <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-gray-400 mb-2">
-            No stocks matched
-          </h3>
-          <p className="text-sm text-gray-500">
-            Try relaxing your filters or changing the market.
-          </p>
-        </div>
-      )}
-
-      {/* API Errors */}
-      {screenStats && screenStats.errors.length > 0 && (
-        <details className="text-xs text-gray-500">
-          <summary className="cursor-pointer hover:text-gray-300 transition-colors">
-            {screenStats.errors.length} stocks failed to load (click to expand)
-          </summary>
-          <ul className="mt-2 space-y-1 pl-4 list-disc">
-            {screenStats.errors.map((err, i) => (
-              <li key={i}>{err}</li>
-            ))}
-          </ul>
-        </details>
-      )}
+      </div>
     </div>
-  );
-}
-
-// ============================================================
-// Sub-components
-// ============================================================
-
-function SortIcon({ direction }: { direction: SortDirection }) {
-  return direction === 'asc' ? (
-    <ChevronUp className="w-3 h-3" />
-  ) : (
-    <ChevronDown className="w-3 h-3" />
-  );
-}
-
-function getValueStatus(
-  value: number | null,
-  range: FilterRange | undefined,
-  meta: FilterMeta
-): 'good' | 'bad' | 'neutral' {
-  if (value === null || !range) return 'neutral';
-
-  // Check if within range
-  const withinMin = range.min === undefined || value >= range.min;
-  const withinMax = range.max === undefined || value <= range.max;
-
-  if (withinMin && withinMax) return 'good';
-  return 'bad';
-}
-
-// ============================================================
-// Screener Row Component with Lazy FCDS-T Computation
-// ============================================================
-function ScreenerRow({ 
-  result, 
-  selected, 
-  onClick, 
-  displayColumns, 
-  filters, 
-  computeScoreForSymbol, 
-  cachedScore 
-}: { 
-  result: ScreenerResult;
-  selected: boolean;
-  onClick: () => void;
-  displayColumns: FilterMeta[];
-  filters: any;
-  computeScoreForSymbol: (r: ScreenerResult) => any;
-  cachedScore: any;
-}) {
-  const [score, setScore] = useState(cachedScore);
-  const rowRef = useRef<HTMLTableRowElement>(null);
-
-  useEffect(() => {
-    if (score) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        setScore(computeScoreForSymbol(result));
-        observer.disconnect();
-      }
-    });
-    if (rowRef.current) observer.observe(rowRef.current);
-    return () => observer.disconnect();
-  }, [score, computeScoreForSymbol, result]);
-
-  return (
-    <tr
-      ref={rowRef}
-      className={`border-b border-dark-700 hover:bg-dark-800 transition-colors cursor-pointer ${
-        selected ? 'bg-blue-600/10' : ''
-      }`}
-      onClick={onClick}
-    >
-      <td className="py-3 px-4 sticky left-0 bg-dark-700 z-10">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="font-bold text-white">
-              {result.stock.symbol}
-            </span>
-            <span className="text-[10px] text-gray-600 ml-1.5">
-              {result.stock.market === 'ID' ? '🇮🇩' : '🇺🇸'}
-            </span>
-          </div>
-        </div>
-        <p className="text-[10px] text-gray-500 truncate max-w-[140px]">
-          {result.stock.name}
-        </p>
-      </td>
-      {displayColumns.map((col) => {
-        const value = (result.stock as any)[col.key] as number | null;
-        const range = filters[col.key];
-        const status = getValueStatus(value, range, col);
-
-        return (
-          <td
-            key={col.key}
-            className={`py-3 px-3 text-right whitespace-nowrap font-medium ${
-              status === 'good'
-                ? 'text-green-400'
-                : status === 'bad'
-                ? 'text-red-400'
-                : 'text-gray-300'
-            }`}
-          >
-            {formatMetricValue(value, col)}
-          </td>
-        );
-      })}
-      
-      {/* FCDS-T Column */}
-      <td className="py-3 px-4 text-center whitespace-nowrap">
-        {score ? (
-          <div className="flex flex-col items-center">
-            <span className="text-sm font-bold text-white">
-              {score.totalScore === 'Incomplete' ? 'Inc.' : `${score.totalScore}/15${score.sScorePending ? '*' : ''}`}
-            </span>
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-              score.grade.startsWith('A') ? 'bg-green-500/20 text-green-400' :
-              score.grade.startsWith('B') ? 'bg-blue-500/20 text-blue-400' :
-              score.grade.startsWith('C') ? 'bg-yellow-500/20 text-yellow-400' :
-              'bg-red-500/20 text-red-400'
-            }`}>
-              {score.grade.split(' ')[0]}{score.sScorePending ? '*' : ''}
-            </span>
-          </div>
-        ) : (
-          <div className="animate-pulse bg-dark-600 h-6 w-12 rounded mx-auto"></div>
-        )}
-      </td>
-      
-      {/* Action Column */}
-      <td className="py-3 px-4 text-right">
-        <Link 
-          href={`/screener/${result.stock.symbol}/analyze`}
-          className="inline-flex items-center gap-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-colors px-3 py-1.5 rounded-lg text-xs font-bold"
-          onClick={(e) => e.stopPropagation()}
-        >
-          Analyze <Navigation className="w-3 h-3" />
-        </Link>
-      </td>
-    </tr>
   );
 }

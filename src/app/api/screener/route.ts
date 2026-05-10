@@ -1,146 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getStockFundamentals2 } from '@/lib/yahooFinance2';
-import { SCREENER_UNIVERSE } from '@/lib/stockData';
+import { runScreenerForSymbol, Preset, ScreenerResult } from '@/lib/swingScreener';
+import { US_UNIVERSES, ID_UNIVERSES } from '@/lib/universes';
+import { screenerResultCache, CACHE_TTL } from '@/lib/cache';
 import { Market } from '@/types';
-import {
-  ScreenerFilters,
-  ScreenerResult,
-  ScreenerFilterKey,
-  FundamentalData,
-} from '@/types/screener';
 
-export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const market = (body.market || 'US') as Market;
-    const filters: ScreenerFilters = body.filters || {};
-    const additionalSymbols: string[] = body.additionalSymbols || [];
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const market = (searchParams.get('market') as Market) || 'US';
+  const universeKey = searchParams.get('universe') || (market === 'US' ? 'SP100' : 'LQ45');
+  const preset = (searchParams.get('preset') as Preset) || 'DEFAULT';
 
-    // Build the stock universe
-    const universe = market === 'ID'
-      ? SCREENER_UNIVERSE.ID
-      : SCREENER_UNIVERSE.US;
-
-    // Add user-specified symbols (deduplicate)
-    const existingSymbols = new Set(universe.map((s) => s.symbol.toUpperCase()));
-    const extraSymbols = additionalSymbols
-      .map((s) => s.toUpperCase().trim())
-      .filter((s) => s && !existingSymbols.has(s));
-
-    const allSymbols = [
-      ...universe,
-      ...extraSymbols.map((s) => ({ symbol: s, name: s })),
-    ];
-
-    console.log(`[Screener] Screening ${allSymbols.length} stocks in ${market} market`);
-
-    // Get active filter keys
-    const activeFilterKeys = Object.keys(filters) as ScreenerFilterKey[];
-    const totalFilters = activeFilterKeys.length;
-
-    if (totalFilters === 0) {
-      return NextResponse.json(
-        { error: 'At least one filter must be specified' },
-        { status: 400 }
-      );
+  // Validate universe
+  let symbols: string[] = [];
+  if (market === 'US') {
+    symbols = US_UNIVERSES[universeKey as keyof typeof US_UNIVERSES] || US_UNIVERSES.SP100;
+  } else {
+    // If 'ALL' is passed, it's too large for a single serverless invocation without timing out.
+    // We will cap it to Kompas100 + LQ45 combined or just fallback to Kompas100.
+    if (universeKey === 'ALL') {
+      symbols = Array.from(new Set([...ID_UNIVERSES.LQ45, ...ID_UNIVERSES.KOMPAS100]));
+    } else {
+      symbols = ID_UNIVERSES[universeKey as keyof typeof ID_UNIVERSES] || ID_UNIVERSES.LQ45;
     }
+  }
 
-    // Fetch fundamentals for all stocks (with error handling per stock)
-    const results: ScreenerResult[] = [];
-    const errors: string[] = [];
+  // For local execution, we allow the full universe to process.
+  // Note: Scanning 900 stocks takes ~3 minutes due to Yahoo Finance rate limiting.
 
-    // Process in batches of 3 to stay within rate limits
-    const batchSize = 3;
-    for (let i = 0; i < allSymbols.length; i += batchSize) {
-      const batch = allSymbols.slice(i, i + batchSize);
+  const cacheKey = `screener:${market}:${universeKey}:${preset}`;
+  const cached = screenerResultCache.get<{ results: ScreenerResult[], timestamp: number }>(cacheKey);
+  
+  if (cached) {
+    return NextResponse.json(cached);
+  }
 
-      const batchResults = await Promise.allSettled(
-        batch.map(async (stock) => {
-          try {
-            const fundamentals = await getStockFundamentals2(stock.symbol, market);
-            // Override name if we have a better one from our universe
-            if (stock.name && stock.name !== stock.symbol) {
-              fundamentals.name = stock.name;
-            }
-            return fundamentals;
-          } catch (err: any) {
-            throw new Error(`${stock.symbol}: ${err.message}`);
-          }
-        })
-      );
+  try {
+    // Process in batches of 10 to avoid rate limits
+    const batchSize = 10;
+    const allResults: ScreenerResult[] = [];
 
-      for (const result of batchResults) {
-        if (result.status === 'fulfilled') {
-          const fundamentals = result.value;
-          const { matchedCount, passed } = evaluateFilters(fundamentals, filters, activeFilterKeys);
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      const batch = symbols.slice(i, i + batchSize);
+      const promises = batch.map(sym => runScreenerForSymbol(sym, market, preset));
+      const batchResults = await Promise.allSettled(promises);
 
-          if (passed) {
-            results.push({
-              stock: fundamentals,
-              matchedFilters: matchedCount,
-              totalFilters,
-              passRate: totalFilters > 0 ? (matchedCount / totalFilters) * 100 : 100,
-            });
-          }
+      for (const res of batchResults) {
+        if (res.status === 'fulfilled') {
+          allResults.push(res.value);
         } else {
-          errors.push(result.reason?.message || 'Unknown error');
-          console.warn(`[Screener] ${result.reason?.message}`);
+          console.error('Screener batch error:', res.reason);
         }
+      }
+
+      // Small delay between batches to respect rate limits
+      if (i + batchSize < symbols.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
-    // Sort by pass rate descending, then by P/E ascending
-    results.sort((a, b) => {
-      if (b.passRate !== a.passRate) return b.passRate - a.passRate;
-      const aPE = a.stock.peRatio ?? 999;
-      const bPE = b.stock.peRatio ?? 999;
-      return aPE - bPE;
-    });
+    // Filter to only passing stocks, sort by TA score descending
+    const passingStocks = allResults
+      .filter(r => r.isPass && !r.error)
+      .sort((a, b) => b.taScore - a.taScore);
 
-    console.log(`[Screener] Done: ${results.length}/${allSymbols.length} matched`);
+    const responseData = {
+      results: passingStocks,
+      timestamp: Date.now()
+    };
 
-    return NextResponse.json({
-      results,
-      totalScreened: allSymbols.length,
-      totalMatched: results.length,
-      errors: errors.slice(0, 10), // limit error list
-    });
+    screenerResultCache.set(cacheKey, responseData, CACHE_TTL.SCREENER_RESULT);
+
+    return NextResponse.json(responseData);
+
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Screener failed' },
-      { status: 500 }
-    );
+    console.error('Screener API Error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
-function evaluateFilters(
-  stock: FundamentalData,
-  filters: ScreenerFilters,
-  activeKeys: ScreenerFilterKey[]
-): { matchedCount: number; passed: boolean } {
-  let matchedCount = 0;
-
-  for (const key of activeKeys) {
-    const range = filters[key];
-    if (!range) continue;
-
-    const value = stock[key];
-
-    // If the value is null/undefined, this filter cannot pass
-    if (value == null) continue;
-
-    const numValue = value as number;
-    let passes = true;
-
-    if (range.min !== undefined && numValue < range.min) passes = false;
-    if (range.max !== undefined && numValue > range.max) passes = false;
-
-    if (passes) matchedCount++;
-  }
-
-  // A stock passes if it matches ALL active filters
-  return { matchedCount, passed: matchedCount === activeKeys.length };
 }

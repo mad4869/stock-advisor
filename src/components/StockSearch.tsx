@@ -11,12 +11,11 @@ interface SearchResult {
 }
 
 interface StockSearchProps {
-  market: Market;
   onSelect: (symbol: string, market: Market) => void;
   placeholder?: string;
 }
 
-export default function StockSearch({ market, onSelect, placeholder }: StockSearchProps) {
+export default function StockSearch({ onSelect, placeholder }: StockSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +32,7 @@ export default function StockSearch({ market, onSelect, placeholder }: StockSear
 
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/stock?query=${encodeURIComponent(q)}&market=${market}`);
+        const res = await fetch(`/api/stock?query=${encodeURIComponent(q)}`);
         const data = await res.json();
         setResults(data.results || []);
       } catch {
@@ -42,7 +41,7 @@ export default function StockSearch({ market, onSelect, placeholder }: StockSear
         setIsLoading(false);
       }
     },
-    [market]
+    []
   );
 
   const handleChange = (value: string) => {
@@ -63,7 +62,12 @@ export default function StockSearch({ market, onSelect, placeholder }: StockSear
     e.preventDefault();
     if (query.trim()) {
       setShowResults(false);
-      onSelect(query.trim().toUpperCase(), market);
+      // Fallback to assuming US if submitted directly without selecting.
+      // A better way would be checking if it ends with .JK or just picking the first result.
+      const firstMatch = results.find((r) => r.symbol.toUpperCase() === query.trim().toUpperCase());
+      const marketToUse = firstMatch ? firstMatch.market : (query.toUpperCase().endsWith('.JK') ? 'ID' : 'US');
+      const cleanSymbol = query.trim().toUpperCase().replace('.JK', '');
+      onSelect(cleanSymbol, marketToUse);
     }
   };
 
@@ -87,7 +91,7 @@ export default function StockSearch({ market, onSelect, placeholder }: StockSear
             value={query}
             onChange={(e) => handleChange(e.target.value)}
             onFocus={() => query && setShowResults(true)}
-            placeholder={placeholder || `Search ${market === 'ID' ? 'Indonesian' : 'US'} stocks...`}
+            placeholder={placeholder || `Search US or Indonesian stocks...`}
             className="input-field pl-12 pr-10"
           />
           {query && (

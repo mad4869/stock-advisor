@@ -5,13 +5,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
-import { useStoryAnalysisStore } from '@/lib/storyAnalysisStore';
-import { useBankingMetricsStore } from '@/lib/bankingMetricsStore';
 import { Market, WatchlistItem } from '@/types';
 import SignalBadge from './SignalBadge';
 import MarketToggle from './MarketToggle';
 import StockSearch from './StockSearch';
-import { RecordSellForm } from './fcdst/RecordSellForm';
 import {
   Eye,
   Plus,
@@ -24,20 +21,12 @@ import {
   Loader2,
 } from 'lucide-react';
 
-type ThesisAccuracy = 'correct' | 'partially_correct' | 'wrong';
-
 export function buildClosedPositionFromWatchlistItem({
   item,
   sellPrice,
-  lessonLearned,
-  thesisAccuracy,
-  scoreAtSell,
 }: {
   item: WatchlistItem;
   sellPrice: number;
-  lessonLearned: string;
-  thesisAccuracy: ThesisAccuracy;
-  scoreAtSell: any;
 }) {
   const eps = item.market === 'ID' ? 1 : 0.01;
   const hitSL =
@@ -81,18 +70,12 @@ export function buildClosedPositionFromWatchlistItem({
     exitReason,
     followedPlan,
     planAnalysis,
-    lessonLearned,
-    thesisAccuracy,
-    fcdstScoreAtBuy: item.fcdstScore ?? null,
-    fcdstScoreAtSell: scoreAtSell ? { ...scoreAtSell, snapshotDate: Date.now() } : null,
   };
 }
 
 export default function WatchlistTable() {
   const hydrated = useHydration();
   const { closePosition, clearClosedPositions } = usePortfolioStore();
-  const getStoryAnalysis = useStoryAnalysisStore(state => state.getAnalysis);
-  const getBankingMetrics = useBankingMetricsStore(state => state.getMetrics);
   const { items, addItem, removeItem, updateItem, clearAll } = useWatchlistStore();
   const [showAdd, setShowAdd] = useState(false);
   const [addMarket, setAddMarket] = useState<Market>('US');
@@ -266,7 +249,7 @@ export default function WatchlistTable() {
 
             <div className="sm:col-span-2">
               <label className="label">Stock</label>
-              <StockSearch market={addMarket} onSelect={(s) => setAddSymbol(s)} />
+              <StockSearch onSelect={(sym, mkt) => { setAddSymbol(sym); setAddMarket(mkt); }} />
             </div>
 
             <div>
@@ -381,13 +364,11 @@ export default function WatchlistTable() {
               key={item.id}
               item={item}
               onRemove={() => removeItem(item.id)}
-              onClose={(sellPrice: number, lessonLearned: string, thesisAccuracy: any, scoreAtSell: any) => {
-                closePosition(buildClosedPositionFromWatchlistItem({ item, sellPrice, lessonLearned, thesisAccuracy, scoreAtSell }));
+              onClose={(sellPrice: number) => {
+                closePosition(buildClosedPositionFromWatchlistItem({ item, sellPrice }));
                 removeItem(item.id);
               }}
               formatCurrency={formatCurrency}
-              getStoryAnalysis={getStoryAnalysis}
-              getBankingMetrics={getBankingMetrics}
             />
           ))}
 
@@ -414,47 +395,18 @@ function WatchlistCard({
   onRemove,
   onClose,
   formatCurrency,
-  getStoryAnalysis,
-  getBankingMetrics,
 }: {
   item: WatchlistItem;
   onRemove: () => void;
-  onClose: (sellPrice: number, lessonLearned: string, thesisAccuracy: 'correct'|'partially_correct'|'wrong', scoreAtSell: any) => void;
+  onClose: (sellPrice: number) => void;
   formatCurrency: (v: number, m: Market) => string;
-  getStoryAnalysis: (symbol: string) => any;
-  getBankingMetrics: (symbol: string) => any;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showCloseForm, setShowCloseForm] = useState(false);
-  const [currentScore, setCurrentScore] = useState<any>(null);
+  const [sellPrice, setSellPrice] = useState(item.currentPrice);
   const isProfit = item.pnlPercent >= 0;
 
-  // Fetch current score when form opens
-  useEffect(() => {
-    if (showCloseForm && !currentScore) {
-      const fetchCurrentScore = async () => {
-        try {
-          const res = await fetch('/api/fcdst-score', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              symbol: item.symbol,
-              market: item.market,
-              storyAnalysis: getStoryAnalysis(item.symbol),
-              bankingMetrics: getBankingMetrics(item.symbol),
-            })
-          });
-          const data = await res.json();
-          if (!data.error) {
-            setCurrentScore(data);
-          }
-        } catch (e) {
-          // ignore
-        }
-      };
-      fetchCurrentScore();
-    }
-  }, [showCloseForm, item.market, item.symbol, currentScore, getStoryAnalysis, getBankingMetrics]);
+
 
   return (
     <div className="card-hover">
@@ -490,17 +442,36 @@ function WatchlistCard({
 
       {/* Close Position Form */}
       {showCloseForm && (
-        <RecordSellForm
-          item={item}
-          currentFcdstScore={currentScore}
-          formatCurrency={formatCurrency}
-          onCancel={() => setShowCloseForm(false)}
-          onSubmit={(price, lessonLearned, thesisAccuracy, scoreAtSell) => {
-            if (confirm(`Close ${item.symbol} position at ${formatCurrency(price, item.market)}?`)) {
-              onClose(price, lessonLearned, thesisAccuracy, scoreAtSell);
-            }
-          }}
-        />
+        <div className="mt-4 bg-dark-800 rounded-xl p-4 border border-dark-600">
+          <h4 className="text-sm font-bold text-white mb-2">Close Position</h4>
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              type="number"
+              value={sellPrice}
+              onChange={(e) => setSellPrice(parseFloat(e.target.value))}
+              placeholder="Sell Price"
+              className="input-field flex-1"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (confirm(`Close ${item.symbol} position at ${formatCurrency(sellPrice, item.market)}?`)) {
+                  onClose(sellPrice);
+                }
+              }}
+              className="btn-primary flex-1 py-2 text-xs"
+            >
+              Confirm Close
+            </button>
+            <button
+              onClick={() => setShowCloseForm(false)}
+              className="btn-secondary flex-1 py-2 text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Prices */}
@@ -531,31 +502,7 @@ function WatchlistCard({
         </div>
       </div>
 
-      {/* FCDS-T Analysis State */}
-      <div className="mt-4">
-        {!item.fcdstScore ? (
-          <div className="bg-dark-800 border border-dark-600 rounded-xl p-3 flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📝</span>
-              <p className="text-xs text-gray-400">Legacy Entry — No FCDS-T analysis recorded</p>
-            </div>
-            <Link 
-              href={`/screener/${item.symbol}/analyze`}
-              className="text-xs font-bold text-blue-400 hover:text-blue-300 inline-flex items-center gap-1 bg-blue-500/10 self-start px-2 py-1 rounded"
-            >
-              Run FCDS-T Analysis →
-            </Link>
-          </div>
-        ) : (
-          <div className="bg-dark-800 border border-dark-600 rounded-xl p-3 flex justify-between items-center">
-            <span className="text-xs font-bold text-gray-400">FCDS-T Score</span>
-            <span className="text-sm font-bold text-white">
-              {item.fcdstScore.totalScore === 'Incomplete' ? 'Inc.' : `${item.fcdstScore.totalScore}/15`} 
-              <span className="ml-1 text-xs">[{item.fcdstScore.grade}]</span>
-            </span>
-          </div>
-        )}
-      </div>
+
 
       {/* Action Reason */}
       <button onClick={() => setShowDetails(!showDetails)} className="mt-3 w-full text-left">
