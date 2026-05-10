@@ -11,52 +11,50 @@ export async function GET(request: NextRequest) {
   const market = (searchParams.get('market') as Market) || 'US';
   const universeKey = searchParams.get('universe') || (market === 'US' ? 'SP100' : 'LQ45');
   const preset = (searchParams.get('preset') as Preset) || 'DEFAULT';
+  const pageParam = searchParams.get('page');
+  const limitParam = searchParams.get('limit');
+
+  const page = pageParam ? parseInt(pageParam, 10) : 1;
+  const limit = limitParam ? parseInt(limitParam, 10) : 15;
 
   // Validate universe
   let symbols: string[] = [];
   if (market === 'US') {
     symbols = US_UNIVERSES[universeKey as keyof typeof US_UNIVERSES] || US_UNIVERSES.SP100;
   } else {
-    // If 'ALL' is passed, it's too large for a single serverless invocation without timing out.
-    // We will cap it to Kompas100 + LQ45 combined or just fallback to Kompas100.
-    if (universeKey === 'ALL') {
-      symbols = Array.from(new Set([...ID_UNIVERSES.LQ45, ...ID_UNIVERSES.KOMPAS100]));
-    } else {
-      symbols = ID_UNIVERSES[universeKey as keyof typeof ID_UNIVERSES] || ID_UNIVERSES.LQ45;
-    }
+    symbols = ID_UNIVERSES[universeKey as keyof typeof ID_UNIVERSES] || ID_UNIVERSES.LQ45;
   }
 
-  // For local execution, we allow the full universe to process.
-  // Note: Scanning 900 stocks takes ~3 minutes due to Yahoo Finance rate limiting.
+  const total = symbols.length;
+  const totalPages = Math.ceil(total / limit);
 
-  const cacheKey = `screener:${market}:${universeKey}:${preset}`;
-  const cached = screenerResultCache.get<{ results: ScreenerResult[], timestamp: number }>(cacheKey);
+  // If page exceeds total pages, return empty
+  if (page > totalPages && total > 0) {
+    return NextResponse.json({
+      results: [],
+      pagination: { page, limit, total, totalPages }
+    });
+  }
+
+  // Get chunk
+  const chunkSymbols = symbols.slice((page - 1) * limit, page * limit);
+  const cacheKey = `screener:${market}:${universeKey}:${preset}:p${page}:l${limit}`;
   
+  const cached = screenerResultCache.get<{ results: ScreenerResult[], pagination: any, timestamp: number }>(cacheKey);
   if (cached) {
     return NextResponse.json(cached);
   }
 
   try {
-    // Process in batches of 10 to avoid rate limits
-    const batchSize = 10;
+    const promises = chunkSymbols.map(sym => runScreenerForSymbol(sym, market, preset));
+    const batchResults = await Promise.allSettled(promises);
+
     const allResults: ScreenerResult[] = [];
-
-    for (let i = 0; i < symbols.length; i += batchSize) {
-      const batch = symbols.slice(i, i + batchSize);
-      const promises = batch.map(sym => runScreenerForSymbol(sym, market, preset));
-      const batchResults = await Promise.allSettled(promises);
-
-      for (const res of batchResults) {
-        if (res.status === 'fulfilled') {
-          allResults.push(res.value);
-        } else {
-          console.error('Screener batch error:', res.reason);
-        }
-      }
-
-      // Small delay between batches to respect rate limits
-      if (i + batchSize < symbols.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+    for (const res of batchResults) {
+      if (res.status === 'fulfilled') {
+        allResults.push(res.value);
+      } else {
+        console.error('Screener chunk error:', res.reason);
       }
     }
 
@@ -67,6 +65,12 @@ export async function GET(request: NextRequest) {
 
     const responseData = {
       results: passingStocks,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages
+      },
       timestamp: Date.now()
     };
 

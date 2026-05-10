@@ -167,11 +167,12 @@ export default function WatchlistTable() {
     }
   };
 
-  const formatCurrency = (value: number, market: Market) => {
+  const formatCurrency = (value: number | undefined | null, market: Market) => {
+    const val = value ?? 0;
     if (market === 'ID') {
-      return `Rp${value.toLocaleString('id-ID')}`;
+      return `Rp${val.toLocaleString('id-ID')}`;
     }
-    return `$${value.toLocaleString('en-US', {
+    return `$${val.toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
@@ -403,8 +404,8 @@ function WatchlistCard({
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showCloseForm, setShowCloseForm] = useState(false);
-  const [sellPrice, setSellPrice] = useState(item.currentPrice);
-  const isProfit = item.pnlPercent >= 0;
+  const [sellPrice, setSellPrice] = useState(item.currentPrice || item.buyPrice);
+  const isProfit = (item.pnlPercent ?? 0) >= 0;
 
 
 
@@ -497,7 +498,7 @@ function WatchlistCard({
           >
             {isProfit ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
             {isProfit ? '+' : ''}
-            {item.pnlPercent.toFixed(2)}%
+            {(item.pnlPercent ?? 0).toFixed(2)}%
           </p>
         </div>
       </div>
@@ -533,7 +534,7 @@ function WatchlistCard({
             Take Profit: {item.takeProfitPrice ? formatCurrency(item.takeProfitPrice, item.market) : '—'}
           </div>
           <div className="col-span-2">
-            Last Updated: {new Date(item.lastUpdated).toLocaleString()}
+            Last Updated: {item.lastUpdated ? new Date(item.lastUpdated).toLocaleString() : 'Never'}
           </div>
         </div>
       )}

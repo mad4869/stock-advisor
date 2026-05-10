@@ -48,7 +48,7 @@ const sizeClasses = {
 };
 
 export default function SignalBadge({ signal, size = 'md' }: SignalBadgeProps) {
-  const config = signalConfig[signal];
+  const config = signalConfig[signal] || signalConfig.HOLD;
   const Icon = config.icon;
 
   return (

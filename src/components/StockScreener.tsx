@@ -29,34 +29,53 @@ export default function StockScreener() {
 
   const [results, setResults] = useState<ScreenerResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  
+  const [tablePage, setTablePage] = useState(1);
+  const tablePageSize = 10;
 
   const handleRunScreen = async () => {
     setLoading(true);
     setError('');
     setResults([]);
+    setProgress(0);
+    setTablePage(1);
 
     const universe = marketTab === 'US' ? usUniverse : idUniverse;
+    let currentPage = 1;
+    let totalPages = 1;
+    let accumulatedResults: ScreenerResult[] = [];
 
     try {
-      const res = await fetch(`/api/screener?market=${marketTab}&universe=${universe}&preset=${preset}`);
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to run screener');
-      }
+      while (currentPage <= totalPages) {
+        const res = await fetch(`/api/screener?market=${marketTab}&universe=${universe}&preset=${preset}&page=${currentPage}&limit=10`);
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to run screener');
+        }
 
-      setResults(data.results || []);
+        accumulatedResults = [...accumulatedResults, ...(data.results || [])];
+        setResults(accumulatedResults.sort((a, b) => b.taScore - a.taScore));
+        
+        totalPages = data.pagination.totalPages;
+        setProgress(Math.round((currentPage / totalPages) * 100));
+        currentPage++;
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setProgress(100);
     }
   };
 
   const handleRowClick = (symbol: string) => {
     router.push(`/stock/${symbol.replace('.JK', '')}?market=${marketTab}`);
   };
+
+  const paginatedResults = results.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize);
 
   return (
     <div className="space-y-6">
@@ -105,6 +124,7 @@ export default function StockScreener() {
             >
               <option value="LQ45">LQ45 (Most Liquid)</option>
               <option value="KOMPAS100">Kompas 100</option>
+              <option value="ALL">All IDX Stocks (~900)</option>
             </select>
           )}
         </div>
@@ -143,6 +163,16 @@ export default function StockScreener() {
           )}
         </button>
       </div>
+
+      {/* Progress Bar */}
+      {loading && (
+        <div className="bg-dark-800 rounded-full h-2 overflow-hidden border border-dark-600">
+          <div 
+            className="bg-blue-500 h-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-4 text-sm">
@@ -192,7 +222,7 @@ export default function StockScreener() {
                 </tr>
               )}
 
-              {!loading && results.map((result) => (
+              {paginatedResults.map((result) => (
                 <tr 
                   key={result.symbol}
                   className="border-b border-dark-700 hover:bg-dark-800 cursor-pointer transition-colors"
@@ -239,10 +269,43 @@ export default function StockScreener() {
                   </td>
                 </tr>
               ))}
+              
+              {loading && results.length > 0 && (
+                <tr>
+                  <td colSpan={5} className="py-4 text-center text-gray-500 bg-dark-800/50">
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto inline text-blue-500 mr-2" />
+                    Scanning remaining chunks... ({progress}%)
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {results.length > tablePageSize && (
+        <div className="flex justify-between items-center mt-4 text-sm text-gray-400 px-2">
+          <div>
+            Showing {(tablePage - 1) * tablePageSize + 1} to {Math.min(tablePage * tablePageSize, results.length)} of {results.length} results
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setTablePage(p => Math.max(1, p - 1))}
+              disabled={tablePage === 1}
+              className="px-3 py-1 bg-dark-800 rounded hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            <button 
+              onClick={() => setTablePage(p => Math.min(Math.ceil(results.length / tablePageSize), p + 1))}
+              disabled={tablePage >= Math.ceil(results.length / tablePageSize)}
+              className="px-3 py-1 bg-dark-800 rounded hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
