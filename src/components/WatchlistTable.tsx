@@ -513,7 +513,9 @@ function WatchlistCard({
               ? 'bg-red-500/10 border-red-500/20 text-red-300'
               : item.action === 'STRONG_BUY' || item.action === 'BUY'
                 ? 'bg-green-500/10 border-green-500/20 text-green-300'
-                : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300'
+                : item.action === 'NO_SIGNAL'
+                  ? 'bg-slate-500/10 border-slate-500/20 text-slate-300'
+                  : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300'
           }`}
         >
           <p className="font-medium mb-1">Recommended Action</p>

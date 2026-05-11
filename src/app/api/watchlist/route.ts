@@ -8,7 +8,15 @@ export const dynamic = 'force-dynamic';
 const MAX_ITEMS = 50;
 const CONCURRENCY_LIMIT = 5;
 
-function determineAction(taScore: number, currentPrice: number, stopLoss: number | null, takeProfit: number | null): { action: Signal; reason: string } {
+function determineAction(
+  taScore: number,
+  taComputed: boolean,
+  currentPrice: number,
+  buyPrice: number,
+  stopLoss: number | null,
+  takeProfit: number | null
+): { action: Signal; reason: string } {
+  // Priority 1: Stop-loss / Take-profit triggers (always apply)
   if (stopLoss && currentPrice <= stopLoss) {
     return { action: 'STRONG_SELL', reason: `Stop-loss hit at ${currentPrice}. Protect your capital.` };
   }
@@ -16,6 +24,23 @@ function determineAction(taScore: number, currentPrice: number, stopLoss: number
     return { action: 'SELL', reason: `Take-profit target reached at ${currentPrice}. Consider locking in gains.` };
   }
   
+  // Priority 2: If TA was never computed (accumulation gate early-exit),
+  // use position-aware fallback instead of false bearish signal.
+  if (!taComputed) {
+    const pnlPct = ((currentPrice - buyPrice) / buyPrice) * 100;
+    if (pnlPct >= 15) {
+      return { action: 'HOLD', reason: 'No active accumulation detected, but position is well in profit. Consider setting a trailing stop to protect gains.' };
+    }
+    if (pnlPct >= 0) {
+      return { action: 'HOLD', reason: 'No active accumulation detected. Position is in profit. Monitor for trend changes.' };
+    }
+    if (pnlPct >= -5) {
+      return { action: 'HOLD', reason: 'No active accumulation detected. Small unrealized loss — monitor closely and review your stop-loss plan.' };
+    }
+    return { action: 'SELL', reason: 'No active accumulation and position is in notable loss. Review your thesis and stop-loss levels.' };
+  }
+
+  // Priority 3: TA was computed — use the score
   if (taScore >= 80) return { action: 'STRONG_BUY', reason: 'Exceptional technical setup with multiple bullish confirmations.' };
   if (taScore >= 60) return { action: 'BUY', reason: 'Solid bullish momentum and trend alignment.' };
   if (taScore >= 40) return { action: 'HOLD', reason: 'Neutral signals. Trend is consolidating or indicators are mixed.' };
@@ -69,8 +94,9 @@ export async function POST(request: NextRequest) {
         ]);
 
         const currentPrice = quote.price;
+        const taComputed = screener.taData !== null;
         const currentScore = screener.taScore;
-        const { action, reason } = determineAction(currentScore, currentPrice, item.stopLossPrice, item.takeProfitPrice);
+        const { action, reason } = determineAction(currentScore, taComputed, currentPrice, item.buyPrice, item.stopLossPrice, item.takeProfitPrice);
 
         // Calculate PnL
         const multiplier = item.market === 'ID' ? 100 : 1;

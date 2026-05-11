@@ -1,7 +1,7 @@
 'use client';
 
 import { Signal } from '@/types';
-import { TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, HelpCircle } from 'lucide-react';
 
 interface SignalBadgeProps {
   signal: Signal;
@@ -38,6 +38,12 @@ const signalConfig: Record<Signal, { label: string; color: string; bgColor: stri
     color: 'text-red-400',
     bgColor: 'bg-red-500/15 border-red-500/30',
     icon: ArrowDown,
+  },
+  NO_SIGNAL: {
+    label: 'No Signal',
+    color: 'text-slate-400',
+    bgColor: 'bg-slate-500/15 border-slate-500/30',
+    icon: HelpCircle,
   },
 };
 

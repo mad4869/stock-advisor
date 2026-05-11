@@ -50,7 +50,7 @@ export interface TechnicalIndicators {
   obvTrend: 'rising' | 'falling' | 'neutral';
 }
 
-export type Signal = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+export type Signal = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' | 'NO_SIGNAL';
 
 export interface IndicatorSignal {
   name: string;
