@@ -1,3 +1,15 @@
+/**
+ * @deprecated This module is no longer used in the screener pipeline.
+ *
+ * Replaced by accumulationProxy.ts which computes smart money signals
+ * from OHLCV data without additional API calls. The yahoo-finance2
+ * quoteSummary modules (institutionOwnership, insiderTransactions,
+ * defaultKeyStatistics) return empty data for IDX stocks, making
+ * this approach unreliable for the Indonesian market.
+ *
+ * Kept for future reference — if a real IDX broker summary API is
+ * integrated, the SmartMoneyMetrics interface pattern may be reused.
+ */
 import YahooFinance from 'yahoo-finance2';
 const yf = new YahooFinance();
 

@@ -66,7 +66,6 @@ export const quoteCache = new MemoryCache();          // For stock quotes
 export const historyCache = new MemoryCache();        // For historical data
 export const searchCache = new MemoryCache();         // For search results
 export const fundamentalsCache = new MemoryCache();   // For fundamental data (screener)
-export const quoteSummaryCache = new MemoryCache();   // For bandarmology/smart money data
 export const screenerResultCache = new MemoryCache(); // For final screener results
 
 // TTL constants (in seconds)
@@ -75,6 +74,5 @@ export const CACHE_TTL = {
   HISTORICAL: 60 * 60,         // 1 hour
   SEARCH: 10 * 60,             // 10 minutes
   FUNDAMENTALS: 30 * 60,       // 30 minutes
-  QUOTE_SUMMARY: 6 * 60 * 60,  // 6 hours
   SCREENER_RESULT: 15 * 60,    // 15 minutes
 };

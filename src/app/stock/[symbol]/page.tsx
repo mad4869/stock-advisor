@@ -112,16 +112,59 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
         </div>
       ) : (
         <>
-          {/* Top Row: Scores */}
+          {/* Top Row: Scores — Smart Money first, TA second */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* TA Score */}
+            {/* Smart Money (Primary Filter) */}
+            <div className="card flex flex-col justify-center items-center py-8 relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 opacity-5">
+                <Shield className="w-40 h-40" />
+              </div>
+              <h3 className="text-gray-400 font-semibold mb-4 uppercase tracking-wider text-sm">Smart Money Flow</h3>
+              {screener.smartMoney ? (
+                <>
+                  <div className="relative">
+                    <svg className="w-32 h-32 transform -rotate-90">
+                      <circle cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-dark-600" />
+                      <circle 
+                        cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="8" fill="transparent" 
+                        strokeDasharray={377} 
+                        strokeDashoffset={377 - (377 * Math.max(0, screener.smartMoney.accumulationScore)) / 100}
+                        className={screener.smartMoney.accumulationScore >= 60 ? "text-green-500" : screener.smartMoney.accumulationScore >= 40 ? "text-yellow-500" : "text-red-500"} 
+                      />
+                    </svg>
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl font-bold text-white">
+                      {screener.smartMoney.accumulationScore}
+                    </div>
+                  </div>
+                  <p className="text-gray-400 text-sm mt-4 mb-1">Accumulation Score</p>
+                  <p className="text-xs mb-6">
+                    <span className={screener.smartMoney.accumulationScore >= 60 ? "text-green-400" : screener.smartMoney.accumulationScore >= 40 ? "text-yellow-400" : "text-red-400"}>
+                      {screener.smartMoney.signalCount}/{screener.smartMoney.totalSignals} signals bullish
+                    </span>
+                  </p>
+                  <div className="w-full max-w-sm space-y-2">
+                    {screener.smartMoney.logs.map((log: string, idx: number) => (
+                      <div key={idx} className="bg-dark-800 rounded px-3 py-2 text-xs flex justify-between items-center border border-dark-600">
+                        <span className="text-gray-300">{log.split(':')[0]}</span>
+                        <span className={log.includes('Passed') ? 'text-green-400' : log.includes('Failed') ? 'text-red-400' : log.includes('ACCUMULATING') ? 'text-green-400' : 'text-gray-500'}>
+                          {log.split(':').slice(1).join(':')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-gray-500 text-center">Smart Money data unavailable</div>
+              )}
+            </div>
+
+            {/* TA Score (Secondary Confirmation) */}
             <div className="card flex flex-col justify-center items-center py-8 relative overflow-hidden">
               <div className="absolute -top-10 -right-10 opacity-5">
                 <Activity className="w-40 h-40" />
               </div>
               <h3 className="text-gray-400 font-semibold mb-4 uppercase tracking-wider text-sm">Technical Swing Score</h3>
               <div className="relative">
-                {/* Circular indicator mock */}
                 <svg className="w-32 h-32 transform -rotate-90">
                   <circle cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-dark-600" />
                   <circle 
@@ -146,37 +189,6 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                   ))
                 )}
               </div>
-            </div>
-
-            {/* Smart Money */}
-            <div className="card flex flex-col justify-center items-center py-8 relative overflow-hidden">
-              <div className="absolute -top-10 -right-10 opacity-5">
-                <Shield className="w-40 h-40" />
-              </div>
-              <h3 className="text-gray-400 font-semibold mb-4 uppercase tracking-wider text-sm">Bandarmology Flow</h3>
-              {screener.smartMoney ? (
-                <>
-                  <div className="text-5xl font-bold mb-2 flex items-baseline gap-2">
-                    <span className={screener.smartMoney.isPass ? "text-green-400" : "text-red-400"}>
-                      {screener.smartMoney.passingMetrics}
-                    </span>
-                    <span className="text-2xl text-gray-500">/ {screener.smartMoney.availableMetrics}</span>
-                  </div>
-                  <p className="text-gray-400 text-sm mb-6">Metrics Passed</p>
-                  <div className="w-full max-w-sm space-y-2">
-                    {screener.smartMoney.logs.map((log, idx) => (
-                      <div key={idx} className="bg-dark-800 rounded px-3 py-2 text-xs flex justify-between items-center border border-dark-600">
-                        <span className="text-gray-300">{log.split(':')[0]}</span>
-                        <span className={log.includes('Passed') ? 'text-green-400' : log.includes('Failed') ? 'text-red-400' : 'text-gray-500'}>
-                          {log.split(':')[1]}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="text-gray-500 text-center">Smart Money data unavailable</div>
-              )}
             </div>
           </div>
 

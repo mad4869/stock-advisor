@@ -12,8 +12,9 @@ interface ScreenerResult {
   market: Market;
   taScore: number;
   smartMoney: {
-    passingMetrics: number;
-    availableMetrics: number;
+    accumulationScore: number;
+    signalCount: number;
+    totalSignals: number;
     isPass: boolean;
   } | null;
   signals: string[];
@@ -57,7 +58,14 @@ export default function StockScreener() {
         }
 
         accumulatedResults = [...accumulatedResults, ...(data.results || [])];
-        setResults(accumulatedResults.sort((a, b) => b.taScore - a.taScore));
+        setResults(accumulatedResults.sort((a, b) => {
+          // Primary sort: accumulation score (smart money first)
+          const aAcc = a.smartMoney?.accumulationScore ?? 0;
+          const bAcc = b.smartMoney?.accumulationScore ?? 0;
+          if (bAcc !== aAcc) return bAcc - aAcc;
+          // Secondary sort: TA score
+          return b.taScore - a.taScore;
+        }));
         
         totalPages = data.pagination.totalPages;
         setProgress(Math.round((currentPage / totalPages) * 100));
@@ -136,12 +144,12 @@ export default function StockScreener() {
             onChange={(e) => setPreset(e.target.value as Preset)}
             className="input-field py-2"
           >
-            <option value="DEFAULT">Default (TA + Smart Money)</option>
-            <option value="BREAKOUT">Swing Breakout</option>
-            <option value="OVERSOLD">Oversold Bounce</option>
-            <option value="SMART_MONEY">Smart Money Follow</option>
-            <option value="VOLUME_CLIMAX">Volume Climax</option>
-            {marketTab === 'US' && <option value="SHORT_SQUEEZE">Short Squeeze</option>}
+            <option value="DEFAULT">Default (Smart Money → TA)</option>
+            <option value="BREAKOUT">Breakout (Accumulation + Breakout TA)</option>
+            <option value="OVERSOLD">Oversold Recovery (Accumulation + Bounce)</option>
+            <option value="SMART_MONEY">Strong Smart Money (3+ Signals)</option>
+            <option value="VOLUME_CLIMAX">Volume Climax (Accumulation + Surge)</option>
+            {marketTab === 'US' && <option value="SHORT_SQUEEZE">Short Squeeze (US Only)</option>}
           </select>
         </div>
         
@@ -196,8 +204,8 @@ export default function StockScreener() {
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-dark-600">
                 <th className="py-3 px-4 font-semibold">Symbol</th>
-                <th className="py-3 px-4 font-semibold">TA Score</th>
                 <th className="py-3 px-4 font-semibold">Smart Money</th>
+                <th className="py-3 px-4 font-semibold">TA Score</th>
                 <th className="py-3 px-4 font-semibold">Signals</th>
                 <th className="py-3 px-4 font-semibold text-right">Action</th>
               </tr>
@@ -208,7 +216,7 @@ export default function StockScreener() {
                   <td colSpan={5} className="py-8 text-center text-gray-500">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
                     Scanning {marketTab === 'US' ? usUniverse : idUniverse} for {preset} setups...<br/>
-                    <span className="text-xs">This may take 10-20 seconds for the initial fetch.</span>
+                    <span className="text-xs">Filtering by smart money accumulation first, then scoring technical setups.</span>
                   </td>
                 </tr>
               )}
@@ -233,6 +241,23 @@ export default function StockScreener() {
                     <div className="text-xs text-gray-500">{marketTab === 'US' ? '🇺🇸 US' : '🇮🇩 IDX'}</div>
                   </td>
                   <td className="py-3 px-4">
+                    {result.smartMoney ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full ${result.smartMoney.accumulationScore >= 60 ? 'bg-green-500' : result.smartMoney.accumulationScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                            style={{ width: `${Math.min(100, result.smartMoney.accumulationScore)}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-medium ${result.smartMoney.accumulationScore >= 60 ? 'text-green-400' : result.smartMoney.accumulationScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {result.smartMoney.signalCount}/{result.smartMoney.totalSignals}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-500">N/A</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
                       <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
                         <div 
@@ -242,15 +267,6 @@ export default function StockScreener() {
                       </div>
                       <span className="text-gray-300 font-medium">{result.taScore}</span>
                     </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    {result.smartMoney ? (
-                      <span className={`text-xs px-2 py-1 rounded ${result.smartMoney.isPass ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                        {result.smartMoney.passingMetrics} / {result.smartMoney.availableMetrics} Passed
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-500">N/A</span>
-                    )}
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex flex-wrap gap-1">

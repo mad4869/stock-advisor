@@ -1,7 +1,7 @@
 import YahooFinance from 'yahoo-finance2';
 import { calculateTA, TAData } from './technicalIndicators';
-import { fetchSmartMoney, SmartMoneyMetrics } from './bandarmology';
-import { historyCache, quoteSummaryCache, CACHE_TTL } from './cache';
+import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
+import { historyCache, CACHE_TTL } from './cache';
 
 const yf = new YahooFinance();
 
@@ -10,7 +10,7 @@ export interface ScreenerResult {
   market: 'US' | 'ID';
   taScore: number;
   taData: TAData | null;
-  smartMoney: SmartMoneyMetrics | null;
+  smartMoney: AccumulationSignals | null;
   signals: string[];
   isPass: boolean;
   error?: string;
@@ -23,10 +23,8 @@ export async function runScreenerForSymbol(
   market: 'US' | 'ID',
   preset: Preset = 'DEFAULT'
 ): Promise<ScreenerResult> {
-  const isUS = market === 'US';
   const querySymbol = market === 'ID' && !symbol.endsWith('.JK') ? `${symbol}.JK` : symbol;
   const historyCacheKey = `history:${querySymbol}`;
-  const quoteSummaryCacheKey = `quoteSummary:${querySymbol}`;
 
   const result: ScreenerResult = {
     symbol,
@@ -39,14 +37,15 @@ export async function runScreenerForSymbol(
   };
 
   try {
-    // 1. Fetch History
+    // ──────────────────────────────────────────────
+    // STEP 1: Fetch History (same as before)
+    // ──────────────────────────────────────────────
     let history = historyCache.get<any[]>(historyCacheKey);
     if (!history) {
-      // Fetch ~250 trading days
       const endDate = new Date();
       const startDate = new Date();
-      startDate.setDate(endDate.getDate() - 365); // 1 year calendar = ~252 trading days
-      
+      startDate.setDate(endDate.getDate() - 365);
+
       const chartData = await yf.chart(querySymbol, {
         period1: startDate.toISOString().split('T')[0],
         period2: endDate.toISOString().split('T')[0],
@@ -63,16 +62,42 @@ export async function runScreenerForSymbol(
       return result;
     }
 
-    // 2. Fetch Smart Money (cached individually within fetchSmartMoney or here)
-    // Actually, let's let fetchSmartMoney handle its own caching if we want, but since it fetches multiple endpoints, we should cache it here.
-    let smartMoney = quoteSummaryCache.get<SmartMoneyMetrics>(quoteSummaryCacheKey);
-    if (!smartMoney) {
-      smartMoney = await fetchSmartMoney(querySymbol, market);
-      quoteSummaryCache.set(quoteSummaryCacheKey, smartMoney, CACHE_TTL.QUOTE_SUMMARY);
-    }
-    result.smartMoney = smartMoney;
+    // ──────────────────────────────────────────────
+    // STEP 2: Smart Money Proxy — RUNS FIRST
+    // Compute accumulation signals from OHLCV data.
+    // No additional API calls needed.
+    //
+    // Accumulation thresholds per preset:
+    //   DEFAULT:       60 (3/5 signals — genuine accumulation)
+    //   SMART_MONEY:   80 (4/5 signals — strong conviction)
+    //   BREAKOUT:      60 (3/5 — accumulation + breakout pattern)
+    //   VOLUME_CLIMAX: 60 (3/5 — accumulation + volume explosion)
+    //   OVERSOLD:      40 (2/5 — more lenient; early accumulation in beaten-down stocks)
+    //   SHORT_SQUEEZE: 60 (3/5 — accumulation fueling squeeze)
+    // ──────────────────────────────────────────────
+    const accThresholdMap: Record<Preset, number> = {
+      DEFAULT: 60,
+      SMART_MONEY: 80,
+      BREAKOUT: 60,
+      VOLUME_CLIMAX: 60,
+      OVERSOLD: 40,
+      SHORT_SQUEEZE: 60,
+    };
+    const accThreshold = accThresholdMap[preset];
+    const accumulation = computeAccumulation(history, accThreshold);
+    result.smartMoney = accumulation;
 
-    // 3. Calculate TA
+    // Early exit: if not accumulating, skip full TA computation.
+    // This is both architecturally correct (follow smart money first)
+    // and a performance optimization for large universes.
+    if (!accumulation.isAccumulating) {
+      result.isPass = false;
+      return result;
+    }
+
+    // ──────────────────────────────────────────────
+    // STEP 3: Calculate TA (only for accumulating stocks)
+    // ──────────────────────────────────────────────
     const ta = calculateTA(history);
     if (!ta) {
       result.error = 'Failed to calculate TA';
@@ -80,12 +105,20 @@ export async function runScreenerForSymbol(
     }
     result.taData = ta;
 
-    // 4. Score TA and Evaluate Presets
+    // ──────────────────────────────────────────────
+    // STEP 4: Score TA and Evaluate Presets
+    // ──────────────────────────────────────────────
     let trendScore = 0; // max 30
     let volScore = 0;   // max 30
     let momScore = 0;   // max 25
     let structScore = 0; // max 15
     const signals: string[] = [];
+
+    // Add accumulation-specific signals
+    if (accumulation.accumulationScore >= 80) signals.push('Strong Accumulation');
+    else if (accumulation.accumulationScore >= 60) signals.push('Accumulation');
+    if (accumulation.obvDivergence) signals.push('OBV Divergence');
+    if (accumulation.largeBlockBuying) signals.push('Block Buying');
 
     // Trend
     const price = ta.close;
@@ -96,7 +129,7 @@ export async function runScreenerForSymbol(
       trendScore += 5;
       signals.push('Supertrend Bullish');
     }
-    
+
     // Volume
     if (ta.volumeRatio) {
       if (ta.volumeRatio >= 2.0) { volScore += 15; signals.push('Volume Surge'); }
@@ -132,49 +165,57 @@ export async function runScreenerForSymbol(
     const totalTaScore = trendScore + volScore + momScore + structScore;
     result.taScore = totalTaScore;
 
-    // Evaluate Presets
+    // ──────────────────────────────────────────────
+    // STEP 5: Evaluate Presets
+    // Accumulation is already guaranteed at this point
+    // (non-accumulating stocks were early-returned above).
+    // Each preset adds additional TA requirements on top of
+    // the accumulation gate.
+    // ──────────────────────────────────────────────
     let taPass = totalTaScore >= 60;
-    let smPass = smartMoney.isPass;
 
     if (preset === 'BREAKOUT') {
+      // Accumulation (≥3/5) + breakout technical setup
       const volReq = ta.volumeRatio ? ta.volumeRatio >= 2.0 : false;
       const adxReq = ta.adx ? ta.adx > 25 : false;
-      // New 20-day high approximation -> distanceTo52wHigh very small, or close > upper BB
       const bbReq = ta.bollingerB ? ta.bollingerB > 0.8 : false;
       taPass = taPass && volReq && adxReq && bbReq;
       if (taPass) signals.push('Swing Breakout Setup');
-    } 
+    }
     else if (preset === 'OVERSOLD') {
-      const rsiReq = ta.rsi ? ta.rsi >= 40 && ta.rsi <= 55 : false; // Recovering
+      // Early accumulation (≥2/5) + oversold bounce pattern
+      // Lower TA threshold since these are recovery plays
+      taPass = totalTaScore >= 40;
+      const rsiReq = ta.rsi ? ta.rsi >= 30 && ta.rsi <= 55 : false;
       const pivotReq = ta.distanceToS1 ? ta.distanceToS1 <= 0.05 && ta.distanceToS1 >= -0.02 : false;
       taPass = taPass && rsiReq && pivotReq;
       if (taPass) signals.push('Oversold Bounce Setup');
     }
     else if (preset === 'SMART_MONEY') {
-      const smReq = smartMoney.institutionsNetIncrease === true && smartMoney.insiderNetBuy === true;
+      // Strong accumulation (≥4/5) + MACD momentum confirmation
       const macdReq = ta.macdIncreasing;
       taPass = taPass && macdReq;
-      smPass = smPass && smReq;
-      if (taPass && smPass) signals.push('Smart Money Flow Confirmation');
+      if (taPass) signals.push('Smart Money Flow Confirmation');
     }
     else if (preset === 'VOLUME_CLIMAX') {
+      // Accumulation (≥3/5) + extreme volume event
       const volReq = ta.volumeRatio ? ta.volumeRatio >= 3.0 : false;
       const emaReq = ta.ema50 ? price > ta.ema50 : false;
       const rsiReq = ta.rsi ? ta.rsi < 70 : false;
       taPass = taPass && volReq && emaReq && rsiReq;
       if (taPass) signals.push('Volume Climax Setup');
     }
-    else if (preset === 'SHORT_SQUEEZE' && isUS) {
-      const floatReq = smartMoney.shortFloatLow === false; // Highly shorted
-      const cpReq = smartMoney.callPutRatioBullish === true;
+    else if (preset === 'SHORT_SQUEEZE') {
+      // Accumulation (≥3/5) + squeeze pattern (US only in practice)
+      const volReq = ta.volumeRatio ? ta.volumeRatio >= 2.5 : false;
       const emaReq = ta.ema20 ? price > ta.ema20 : false;
-      taPass = taPass && emaReq;
-      smPass = smPass && floatReq && cpReq;
-      if (taPass && smPass) signals.push('Short Squeeze Setup');
+      const stochReq = ta.stochRecovery;
+      taPass = taPass && volReq && emaReq && stochReq;
+      if (taPass) signals.push('Short Squeeze Setup');
     }
 
     result.signals = signals;
-    result.isPass = taPass && smPass;
+    result.isPass = taPass;
 
     return result;
   } catch (err: any) {
