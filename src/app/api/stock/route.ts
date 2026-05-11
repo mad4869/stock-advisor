@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const symbol = searchParams.get('symbol');
-  const market = (searchParams.get('market') || 'US') as Market;
+  const marketRaw = searchParams.get('market') || 'US';
+  const market: Market = marketRaw === 'ID' ? 'ID' : 'US';
   const query = searchParams.get('query');
 
   try {
@@ -21,7 +22,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
     }
 
-    const quote = await getStockQuote(symbol, market);
+    // Validate symbol format
+    const cleanSymbol = symbol.toUpperCase().trim();
+    if (!cleanSymbol.match(/^[A-Z0-9.]{1,10}$/)) {
+      return NextResponse.json({ error: 'Invalid symbol format' }, { status: 400 });
+    }
+
+    const quote = await getStockQuote(cleanSymbol, market);
     return NextResponse.json({ quote });
   } catch (error: any) {
     return NextResponse.json(

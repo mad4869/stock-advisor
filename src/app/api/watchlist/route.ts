@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runScreenerForSymbol } from '@/lib/swingScreener';
 import { getStockQuote } from '@/lib/stockData';
-import { Signal } from '@/types';
+import { Signal, Market } from '@/types';
 
 export const dynamic = 'force-dynamic';
+
+const MAX_ITEMS = 50;
+const CONCURRENCY_LIMIT = 5;
 
 function determineAction(taScore: number, currentPrice: number, stopLoss: number | null, takeProfit: number | null): { action: Signal; reason: string } {
   if (stopLoss && currentPrice <= stopLoss) {
@@ -20,6 +23,25 @@ function determineAction(taScore: number, currentPrice: number, stopLoss: number
   return { action: 'STRONG_SELL', reason: 'Strong bearish breakdown. Multiple indicators showing weakness.' };
 }
 
+/** Process items in batches with concurrency limit */
+async function processBatched<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(batch.map(fn));
+    for (const res of batchResults) {
+      if (res.status === 'fulfilled') {
+        results.push(res.value);
+      }
+    }
+  }
+  return results;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { items } = await request.json();
@@ -27,16 +49,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid items array' }, { status: 400 });
     }
 
-    const promises = items.map(async (item: any) => {
+    // Clamp to max items
+    const safeItems = items.slice(0, MAX_ITEMS);
+
+    // Validate each item has required fields
+    const validItems = safeItems.filter((item: any) =>
+      item?.symbol &&
+      typeof item.symbol === 'string' &&
+      typeof item.buyPrice === 'number' &&
+      typeof item.quantity === 'number' &&
+      ['US', 'ID'].includes(item.market)
+    );
+
+    const updates = await processBatched(validItems, CONCURRENCY_LIMIT, async (item: any) => {
       try {
         const [quote, screener] = await Promise.all([
-          getStockQuote(item.symbol, item.market),
-          runScreenerForSymbol(item.symbol, item.market, 'DEFAULT')
+          getStockQuote(item.symbol, item.market as Market),
+          runScreenerForSymbol(item.symbol, item.market as Market, 'DEFAULT')
         ]);
 
         const currentPrice = quote.price;
         const currentScore = screener.taScore;
-        const signals = screener.signals || [];
         const { action, reason } = determineAction(currentScore, currentPrice, item.stopLossPrice, item.takeProfitPrice);
 
         // Calculate PnL
@@ -59,10 +92,7 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    const results = await Promise.all(promises);
-    const updates = results.filter(Boolean);
-
-    return NextResponse.json({ updates });
+    return NextResponse.json({ updates: updates.filter(Boolean) });
 
   } catch (error: any) {
     console.error('Watchlist API Error:', error);

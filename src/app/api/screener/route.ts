@@ -6,16 +6,28 @@ import { Market } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
+const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE'];
+const MAX_LIMIT = 50;
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const market = (searchParams.get('market') as Market) || 'US';
+
+  // Input validation
+  const marketRaw = searchParams.get('market') || 'US';
+  const market: Market = marketRaw === 'ID' ? 'ID' : 'US';
+
   const universeKey = searchParams.get('universe') || (market === 'US' ? 'SP100' : 'LQ45');
-  const preset = (searchParams.get('preset') as Preset) || 'DEFAULT';
+
+  const presetRaw = searchParams.get('preset') || 'DEFAULT';
+  const preset: Preset = VALID_PRESETS.includes(presetRaw as Preset)
+    ? (presetRaw as Preset)
+    : 'DEFAULT';
+
   const pageParam = searchParams.get('page');
   const limitParam = searchParams.get('limit');
 
-  const page = pageParam ? parseInt(pageParam, 10) : 1;
-  const limit = limitParam ? parseInt(limitParam, 10) : 15;
+  const page = Math.max(1, pageParam ? parseInt(pageParam, 10) || 1 : 1);
+  const limit = Math.min(MAX_LIMIT, Math.max(1, limitParam ? parseInt(limitParam, 10) || 15 : 15));
 
   // Validate universe
   let symbols: string[] = [];

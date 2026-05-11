@@ -106,6 +106,17 @@ interface PortfolioStore {
 export const CURRENT_SCHEMA_VERSION = 2;
 
 export const migratePortfolioState = (persistedState: any, version: number) => {
+    if (version === 1) {
+        // v1 → v2: Convert flat-format snapshots to per-market format
+        const state = persistedState as any;
+        if (state.snapshots && Array.isArray(state.snapshots)) {
+            state.snapshots = state.snapshots
+                .filter((s: any) => s.us !== undefined && s.id !== undefined)
+                // Drop old-format snapshots that can't be migrated
+                // (they lack per-market data, so transformation is lossy)
+                ;
+        }
+    }
     return persistedState as any;
 };
 

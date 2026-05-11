@@ -11,7 +11,11 @@ interface CacheEntry<T> {
 
 class MemoryCache {
   private store: Map<string, CacheEntry<any>> = new Map();
-  private maxEntries: number = 500;
+  private maxEntries: number;
+
+  constructor(maxEntries: number = 500) {
+    this.maxEntries = maxEntries;
+  }
 
   get<T>(key: string): T | null {
     const entry = this.store.get(key);
@@ -61,12 +65,13 @@ class MemoryCache {
   }
 }
 
-// Singleton instances with different TTLs
-export const quoteCache = new MemoryCache();          // For stock quotes
-export const historyCache = new MemoryCache();        // For historical data
-export const searchCache = new MemoryCache();         // For search results
-export const fundamentalsCache = new MemoryCache();   // For fundamental data (screener)
-export const screenerResultCache = new MemoryCache(); // For final screener results
+// Singleton instances — sized by expected data volume
+// History cache is smaller because each entry is a large array (~252 daily bars)
+export const quoteCache = new MemoryCache(300);          // For stock quotes (small objects)
+export const historyCache = new MemoryCache(200);        // For historical data (large arrays)
+export const searchCache = new MemoryCache(100);         // For search results
+export const fundamentalsCache = new MemoryCache(200);   // For fundamental data (screener)
+export const screenerResultCache = new MemoryCache(100); // For final screener results
 
 // TTL constants (in seconds)
 export const CACHE_TTL = {

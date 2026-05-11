@@ -1,9 +1,7 @@
-import YahooFinance from 'yahoo-finance2';
+import { yf } from './yahooFinance2';
 import { calculateTA, TAData } from './technicalIndicators';
 import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
 import { historyCache, CACHE_TTL } from './cache';
-
-const yf = new YahooFinance();
 
 export interface ScreenerResult {
   symbol: string;
@@ -23,8 +21,9 @@ export async function runScreenerForSymbol(
   market: 'US' | 'ID',
   preset: Preset = 'DEFAULT'
 ): Promise<ScreenerResult> {
-  const querySymbol = market === 'ID' && !symbol.endsWith('.JK') ? `${symbol}.JK` : symbol;
-  const historyCacheKey = `history:${querySymbol}`;
+  const cleanSymbol = symbol.toUpperCase().replace('.JK', '').replace('.JKT', '').trim();
+  const querySymbol = market === 'ID' && !symbol.endsWith('.JK') ? `${cleanSymbol}.JK` : cleanSymbol;
+  const historyCacheKey = `history:${cleanSymbol}:${market}:12`;
 
   const result: ScreenerResult = {
     symbol,

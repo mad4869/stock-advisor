@@ -5,7 +5,10 @@
  */
 
 import YahooFinance from 'yahoo-finance2';
-const yahooFinance = new YahooFinance();
+
+/** Shared yahoo-finance2 instance — import this instead of creating new instances */
+export const yf = new YahooFinance();
+const yahooFinance = yf;
 import { fundamentalsCache, CACHE_TTL } from './cache';
 import {
   ComprehensiveAnalysis,

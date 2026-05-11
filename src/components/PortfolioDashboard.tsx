@@ -116,19 +116,7 @@ export default function PortfolioDashboard() {
     const [timeRange, setTimeRange] = useState<7 | 30 | 90 | 365>(30);
     const [chartMarket, setChartMarket] = useState<ChartMarket>('US');
 
-    // Clear old-format snapshots automatically (one-time migration)
-    useEffect(() => {
-        if (hydrated && snapshots.length > 0) {
-            const hasOldFormat = snapshots.some(
-                (s: any) => s.us === undefined || s.id === undefined
-            );
-            if (hasOldFormat) {
-                console.log('[Portfolio] Clearing old-format snapshots');
-                clearSnapshots();
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hydrated]);
+    // Note: Old-format snapshot migration is handled by portfolioStore's migrate function
 
     // Take snapshot when data is available
     useEffect(() => {

@@ -1,28 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runScreenerForSymbol } from '@/lib/swingScreener';
 import { getStockQuote } from '@/lib/stockData';
-import YahooFinance from 'yahoo-finance2';
+import { yf } from '@/lib/yahooFinance2';
 import { Market } from '@/types';
-
-const yf = new YahooFinance();
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const symbol = searchParams.get('symbol');
-  const market = (searchParams.get('market') || 'US') as Market;
+  const marketRaw = searchParams.get('market') || 'US';
+  const market: Market = marketRaw === 'ID' ? 'ID' : 'US';
 
   if (!symbol) {
     return NextResponse.json({ error: 'Symbol is required' }, { status: 400 });
   }
 
-  const querySymbol = market === 'ID' && !symbol.endsWith('.JK') ? `${symbol}.JK` : symbol;
+  const cleanSymbol = symbol.toUpperCase().trim();
+  if (!cleanSymbol.match(/^[A-Z0-9.]{1,10}$/)) {
+    return NextResponse.json({ error: 'Invalid symbol format' }, { status: 400 });
+  }
+
+  const querySymbol = market === 'ID' && !cleanSymbol.endsWith('.JK') ? `${cleanSymbol}.JK` : cleanSymbol;
 
   try {
     const [screener, quote, profileSummary] = await Promise.allSettled([
-      runScreenerForSymbol(symbol, market, 'DEFAULT'),
-      getStockQuote(symbol, market),
+      runScreenerForSymbol(cleanSymbol, market, 'DEFAULT'),
+      getStockQuote(cleanSymbol, market),
       yf.quoteSummary(querySymbol, { modules: ['assetProfile'] })
     ]);
 

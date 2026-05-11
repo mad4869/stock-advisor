@@ -258,16 +258,25 @@ export function computeAccumulation(
     logs: ['Insufficient data for accumulation analysis']
   };
 
-  if (!history || history.length < MIN_DATA_POINTS) {
+  // Filter out bars with null/zero values that would corrupt calculations
+  const validHistory = history.filter(
+    h => h.open != null && h.open > 0 &&
+         h.high != null && h.high > 0 &&
+         h.low != null && h.low > 0 &&
+         h.close != null && h.close > 0 &&
+         h.volume != null && h.volume >= 0
+  );
+
+  if (validHistory.length < MIN_DATA_POINTS) {
     return defaultResult;
   }
 
-  // Extract arrays
-  const opens = history.map(h => h.open || 0);
-  const highs = history.map(h => h.high || 0);
-  const lows = history.map(h => h.low || 0);
-  const closes = history.map(h => h.close || 0);
-  const volumes = history.map(h => h.volume || 0);
+  // Extract arrays from validated data
+  const opens = validHistory.map(h => h.open);
+  const highs = validHistory.map(h => h.high);
+  const lows = validHistory.map(h => h.low);
+  const closes = validHistory.map(h => h.close);
+  const volumes = validHistory.map(h => h.volume);
 
   // 1. A/D Line Trend
   const adLine = computeADLine(highs, lows, closes, volumes);

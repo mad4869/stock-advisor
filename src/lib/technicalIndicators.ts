@@ -53,10 +53,20 @@ export function calculateTA(historicalData: any[]): TAData | null {
   // historicalData is expected to be oldest to newest
   if (!historicalData || historicalData.length < 20) return null;
 
-  const closes = historicalData.map(d => d.close || 0);
-  const highs = historicalData.map(d => d.high || 0);
-  const lows = historicalData.map(d => d.low || 0);
-  const volumes = historicalData.map(d => d.volume || 0);
+  // Filter out bars with null/zero OHLCV values that would corrupt calculations
+  const validData = historicalData.filter(
+    (d: any) => d.close != null && d.close > 0 &&
+                d.high != null && d.high > 0 &&
+                d.low != null && d.low > 0 &&
+                d.open != null && d.open > 0
+  );
+
+  if (validData.length < 20) return null;
+
+  const closes = validData.map((d: any) => d.close);
+  const highs = validData.map((d: any) => d.high);
+  const lows = validData.map((d: any) => d.low);
+  const volumes = validData.map((d: any) => d.volume || 0); // Volume 0 is valid (no trades)
   
   const currentClose = closes[closes.length - 1];
   const currentHigh = highs[highs.length - 1];

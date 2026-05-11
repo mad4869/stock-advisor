@@ -1,12 +1,15 @@
 {
   "functions": {
-    "src/app/api/recommend/route.ts": {
+    "src/app/api/analysis/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/screener/route.ts": {
       "maxDuration": 30
     },
-    "src/app/api/analyze/route.ts": {
-      "maxDuration": 15
-    },
     "src/app/api/watchlist/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/test/route.ts": {
       "maxDuration": 30
     }
   }

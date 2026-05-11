@@ -20,60 +20,30 @@ async function testYahoo(symbol: string, suffix: string = ''): Promise<{ ok: boo
 }
 
 export async function GET() {
-  const usProvider = process.env.US_STOCK_PROVIDER || 'yahoo';
-  const idxProvider = process.env.IDX_STOCK_PROVIDER || 'yahoo';
-
   const status: any = {
-    us: { provider: usProvider, status: 'unknown', message: '' },
-    idx: { provider: idxProvider, status: 'unknown', message: '' },
+    us: { provider: 'yahoo', status: 'unknown', message: '' },
+    idx: { provider: 'yahoo', status: 'unknown', message: '' },
   };
 
   // Test US
-  if (usProvider === 'mock') {
-    status.us = { provider: 'mock', status: 'mock', message: 'Mock data' };
-  } else if (usProvider === 'yahoo') {
-    const result = await testYahoo('AAPL');
-    status.us = result.ok
-      ? { provider: 'yahoo', status: 'connected', message: `OK (AAPL: $${result.price})` }
-      : { provider: 'yahoo', status: 'error', message: result.error };
-  } else if (usProvider === 'twelvedata') {
-    const apiKey = process.env.TWELVE_DATA_API_KEY;
-    if (!apiKey) {
-      status.us = { provider: 'twelvedata', status: 'error', message: 'No API key' };
-    } else {
-      try {
-        const res = await fetch(`https://api.twelvedata.com/quote?symbol=AAPL&apikey=${apiKey}`);
-        const data = await res.json();
-        status.us = data.close
-          ? { provider: 'twelvedata', status: 'connected', message: `OK (8 req/min limit)` }
-          : { provider: 'twelvedata', status: 'error', message: data.message };
-      } catch (e: any) {
-        status.us = { provider: 'twelvedata', status: 'error', message: e.message };
-      }
-    }
-  }
+  const usResult = await testYahoo('AAPL');
+  status.us = usResult.ok
+    ? { provider: 'yahoo', status: 'connected', message: `OK (AAPL: $${usResult.price})` }
+    : { provider: 'yahoo', status: 'error', message: usResult.error };
 
   // Test IDX
-  if (idxProvider === 'mock') {
-    status.idx = { provider: 'mock', status: 'mock', message: 'Mock data' };
-  } else if (idxProvider === 'yahoo') {
-    const result = await testYahoo('BBCA', '.JK');
-    status.idx = result.ok
-      ? { provider: 'yahoo', status: 'connected', message: `OK (BBCA: Rp${Math.round(result.price!)})` }
-      : { provider: 'yahoo', status: 'error', message: result.error };
-  } else if (idxProvider === 'twelvedata') {
-    status.idx = { provider: 'twelvedata', status: 'connected', message: '(limited IDX coverage)' };
-  }
+  const idxResult = await testYahoo('BBCA', '.JK');
+  status.idx = idxResult.ok
+    ? { provider: 'yahoo', status: 'connected', message: `OK (BBCA: Rp${Math.round(idxResult.price!)})` }
+    : { provider: 'yahoo', status: 'error', message: idxResult.error };
 
   const overallStatus =
     status.us.status === 'error' || status.idx.status === 'error'
       ? 'error'
-      : status.us.status === 'mock' && status.idx.status === 'mock'
-        ? 'mock'
-        : 'connected';
+      : 'connected';
 
   return NextResponse.json({
-    provider: `US: ${status.us.provider} | IDX: ${status.idx.provider}`,
+    provider: 'Yahoo Finance',
     status: overallStatus,
     message: `US: ${status.us.message} | IDX: ${status.idx.message}`,
     details: status,
