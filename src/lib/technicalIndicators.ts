@@ -120,29 +120,35 @@ export function calculateTA(historicalData: any[]): TAData | null {
     // This isn't a full historical supertrend, but a proxy:
     // If Close > (High+Low)/2 - (3 * ATR), it's likely bullish if it hasn't crossed below recently.
     // To do it properly we need to iterate.
-    let upperBandBasic = (highs[0] + lows[0]) / 2 + (3 * (atrData10[0] || 0));
-    let lowerBandBasic = (highs[0] + lows[0]) / 2 - (3 * (atrData10[0] || 0));
-    let upperBand = upperBandBasic;
-    let lowerBand = lowerBandBasic;
-    let inUptrend = true;
-    
-    // Start iterating from where we have ATR
+    // Improved Supertrend proxy:
     const atrOffset = closes.length - atrData10.length;
-    for (let i = atrOffset; i < closes.length; i++) {
+    let upperBand = (highs[atrOffset] + lows[atrOffset]) / 2 + (3 * atrData10[0]);
+    let lowerBand = (highs[atrOffset] + lows[atrOffset]) / 2 - (3 * atrData10[0]);
+    let inUptrend = closes[atrOffset] > lowerBand;
+    
+    for (let i = atrOffset + 1; i < closes.length; i++) {
       const hl2 = (highs[i] + lows[i]) / 2;
       const atrVal = atrData10[i - atrOffset];
-      upperBandBasic = hl2 + (3 * atrVal);
-      lowerBandBasic = hl2 - (3 * atrVal);
+      const upperBandBasic = hl2 + (3 * atrVal);
+      const lowerBandBasic = hl2 - (3 * atrVal);
       
-      // Calculate Upper/Lower Bands
-      if (upperBandBasic < upperBand || closes[i-1] > upperBand) upperBand = upperBandBasic;
-      else upperBand = upperBand;
-      
-      if (lowerBandBasic > lowerBand || closes[i-1] < lowerBand) lowerBand = lowerBandBasic;
-      else lowerBand = lowerBand;
-      
-      if (closes[i] <= upperBand && closes[i-1] > upperBand) inUptrend = false;
-      if (closes[i] >= lowerBand && closes[i-1] < lowerBand) inUptrend = true;
+      if (inUptrend) {
+        if (closes[i] < lowerBand) {
+          inUptrend = false;
+          upperBand = upperBandBasic;
+          lowerBand = lowerBandBasic;
+        } else {
+          lowerBand = Math.max(lowerBand, lowerBandBasic);
+        }
+      } else {
+        if (closes[i] > upperBand) {
+          inUptrend = true;
+          lowerBand = lowerBandBasic;
+          upperBand = upperBandBasic;
+        } else {
+          upperBand = Math.min(upperBand, upperBandBasic);
+        }
+      }
     }
     supertrendBullish = inUptrend;
   }
