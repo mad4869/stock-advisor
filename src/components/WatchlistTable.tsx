@@ -19,6 +19,7 @@ import {
   X,
   AlertCircle,
   Loader2,
+  Pencil,
 } from 'lucide-react';
 
 export function buildClosedPositionFromWatchlistItem({
@@ -369,6 +370,10 @@ export default function WatchlistTable() {
                 closePosition(buildClosedPositionFromWatchlistItem({ item, sellPrice }));
                 removeItem(item.id);
               }}
+              onUpdate={(updates) => {
+                updateItem(item.id, updates);
+                setTimeout(() => refreshWatchlist(), 500);
+              }}
               formatCurrency={formatCurrency}
             />
           ))}
@@ -395,19 +400,53 @@ function WatchlistCard({
   item,
   onRemove,
   onClose,
+  onUpdate,
   formatCurrency,
 }: {
   item: WatchlistItem;
   onRemove: () => void;
   onClose: (sellPrice: number) => void;
+  onUpdate: (updates: Partial<WatchlistItem>) => void;
   formatCurrency: (v: number, m: Market) => string;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showCloseForm, setShowCloseForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [sellPrice, setSellPrice] = useState(item.currentPrice || item.buyPrice);
   const isProfit = (item.pnlPercent ?? 0) >= 0;
 
+  // Edit form state
+  const [editBuyPrice, setEditBuyPrice] = useState(String(item.buyPrice));
+  const [editQuantity, setEditQuantity] = useState(String(item.quantity));
+  const [editStopLoss, setEditStopLoss] = useState(item.stopLossPrice ? String(item.stopLossPrice) : '');
+  const [editTakeProfit, setEditTakeProfit] = useState(item.takeProfitPrice ? String(item.takeProfitPrice) : '');
+  const [editBuyDate, setEditBuyDate] = useState(item.buyDate);
 
+  const openEditForm = () => {
+    // Reset edit fields to current values when opening
+    setEditBuyPrice(String(item.buyPrice));
+    setEditQuantity(String(item.quantity));
+    setEditStopLoss(item.stopLossPrice ? String(item.stopLossPrice) : '');
+    setEditTakeProfit(item.takeProfitPrice ? String(item.takeProfitPrice) : '');
+    setEditBuyDate(item.buyDate);
+    setShowEditForm(true);
+    setShowCloseForm(false);
+  };
+
+  const handleSaveEdit = () => {
+    const newBuyPrice = parseFloat(editBuyPrice);
+    const newQuantity = parseInt(editQuantity);
+    if (isNaN(newBuyPrice) || newBuyPrice <= 0 || isNaN(newQuantity) || newQuantity <= 0) return;
+
+    onUpdate({
+      buyPrice: newBuyPrice,
+      quantity: newQuantity,
+      stopLossPrice: editStopLoss ? parseFloat(editStopLoss) : null,
+      takeProfitPrice: editTakeProfit ? parseFloat(editTakeProfit) : null,
+      buyDate: editBuyDate,
+    });
+    setShowEditForm(false);
+  };
 
   return (
     <div className="card-hover">
@@ -425,7 +464,14 @@ function WatchlistCard({
 
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setShowCloseForm(!showCloseForm)}
+            onClick={openEditForm}
+            className="text-gray-600 hover:text-blue-400 transition-colors p-1"
+            title="Edit Position"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => { setShowCloseForm(!showCloseForm); setShowEditForm(false); }}
             className="text-xs bg-dark-600 hover:bg-dark-500 text-gray-400 hover:text-white px-2 py-1 rounded-lg transition-colors"
             title="Close Position (Sell)"
           >
@@ -440,6 +486,87 @@ function WatchlistCard({
           </button>
         </div>
       </div>
+
+      {/* Edit Position Form */}
+      {showEditForm && (
+        <div className="mt-4 bg-dark-800 rounded-xl p-4 border border-blue-500/30 animate-slide-up">
+          <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <Pencil className="w-3.5 h-3.5 text-blue-400" />
+            Edit Position
+          </h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Avg. Buy Price ({item.market === 'ID' ? 'Rp' : '$'})</label>
+              <input
+                type="number"
+                value={editBuyPrice}
+                onChange={(e) => setEditBuyPrice(e.target.value)}
+                className="input-field"
+                min="0"
+                step="any"
+              />
+            </div>
+            <div>
+              <label className="label">Quantity ({item.market === 'ID' ? 'lots' : 'shares'})</label>
+              <input
+                type="number"
+                value={editQuantity}
+                onChange={(e) => setEditQuantity(e.target.value)}
+                className="input-field"
+                min="1"
+              />
+            </div>
+            <div>
+              <label className="label">Stop Loss <span className="text-gray-600">(opt)</span></label>
+              <input
+                type="number"
+                value={editStopLoss}
+                onChange={(e) => setEditStopLoss(e.target.value)}
+                className="input-field"
+                min="0"
+                step="any"
+                placeholder="—"
+              />
+            </div>
+            <div>
+              <label className="label">Take Profit <span className="text-gray-600">(opt)</span></label>
+              <input
+                type="number"
+                value={editTakeProfit}
+                onChange={(e) => setEditTakeProfit(e.target.value)}
+                className="input-field"
+                min="0"
+                step="any"
+                placeholder="—"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="label">Buy Date</label>
+              <input
+                type="date"
+                value={editBuyDate}
+                onChange={(e) => setEditBuyDate(e.target.value)}
+                className="input-field"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={handleSaveEdit}
+              className="btn-primary flex-1 py-2 text-xs flex items-center justify-center gap-1"
+            >
+              <Pencil className="w-3 h-3" />
+              Save Changes
+            </button>
+            <button
+              onClick={() => setShowEditForm(false)}
+              className="btn-secondary flex-1 py-2 text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Close Position Form */}
       {showCloseForm && (
