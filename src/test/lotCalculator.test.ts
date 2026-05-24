@@ -54,5 +54,15 @@ describe('lotCalculator', () => {
       const result2 = calculateLots('BBCA', 'ID', 5200, 100000000, 1, 5108);
       expect(result2.stopLossPrice).toBe(5100);
     });
+
+    it('should round the entryPrice input to the nearest valid IDX tick size', () => {
+      // Entry = Rp 5004 (rounded to nearest 10 is Rp 5000)
+      const result = calculateLots('BBCA', 'ID', 5004, 1000000);
+      expect(result.price).toBe(5000);
+
+      // Entry = Rp 7512 (rounded to nearest 25 is Rp 7500)
+      const result2 = calculateLots('BBCA', 'ID', 7512, 1000000);
+      expect(result2.price).toBe(7500);
+    });
   });
 });

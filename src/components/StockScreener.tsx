@@ -337,7 +337,7 @@ export default function StockScreener() {
                             {/* TA and action details */}
                             <div className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col justify-between">
                               <div>
-                                <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Technical Indicators</h4>
+                                <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Technical Indicators & Risk</h4>
                                 {result.taData ? (
                                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                     <div>RSI (14): <span className="font-semibold text-white">{result.taData.rsi?.toFixed(1) ?? '—'}</span></div>
@@ -346,7 +346,51 @@ export default function StockScreener() {
                                     <div>Bollinger %B: <span className="font-semibold text-white">{result.taData.bollingerB?.toFixed(2) ?? '—'}</span></div>
                                     <div>ATR %: <span className="font-semibold text-white">{result.taData.atrPercent ? `${result.taData.atrPercent.toFixed(1)}%` : '—'}</span></div>
                                     <div>Vol Ratio: <span className="font-semibold text-white">{result.taData.volumeRatio?.toFixed(1) ?? '—'}x</span></div>
+                                    <div>Pivot S1: <span className="font-semibold text-white">{result.taData.pivotS1 ? `${marketTab === 'ID' ? 'Rp' : '$'}${result.taData.pivotS1.toLocaleString(marketTab === 'ID' ? 'id-ID' : 'en-US')}` : '—'}</span></div>
+                                    <div>Pivot R1: <span className="font-semibold text-white">{result.taData.pivotR1 ? `${marketTab === 'ID' ? 'Rp' : '$'}${result.taData.pivotR1.toLocaleString(marketTab === 'ID' ? 'id-ID' : 'en-US')}` : '—'}</span></div>
                                     <div className="col-span-2 mt-1">Supertrend: <span className={result.taData.supertrendBullish ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>{result.taData.supertrendBullish ? 'BULLISH' : 'BEARISH'}</span></div>
+                                    
+                                    {/* Crossover Recency */}
+                                    {(result.taData.emaCrossoverRecency !== null || result.taData.macdCrossoverRecency !== null || result.taData.priceCrossoverRecency !== null) && (
+                                      <div className="col-span-2 mt-2 pt-2 border-t border-dark-700">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Crossover Recency</p>
+                                        <div className="space-y-0.5 text-[11px]">
+                                          {result.taData.emaCrossoverRecency !== null && (
+                                            <div className="flex justify-between">
+                                              <span className="text-gray-400">Golden Cross (EMA20 &gt; EMA50)</span>
+                                              <span className="text-white font-medium">{result.taData.emaCrossoverRecency}d ago</span>
+                                            </div>
+                                          )}
+                                          {result.taData.macdCrossoverRecency !== null && (
+                                            <div className="flex justify-between">
+                                              <span className="text-gray-400">MACD Bullish Cross</span>
+                                              <span className="text-white font-medium">{result.taData.macdCrossoverRecency}d ago</span>
+                                            </div>
+                                          )}
+                                          {result.taData.priceCrossoverRecency !== null && (
+                                            <div className="flex justify-between">
+                                              <span className="text-gray-400">Price &gt; EMA20 Cross</span>
+                                              <span className="text-white font-medium">{result.taData.priceCrossoverRecency}d ago</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Warning-level Red Flags */}
+                                    {result.redFlags && result.redFlags.length > 0 && (
+                                      <div className="col-span-2 mt-2 pt-2 border-t border-dark-700">
+                                        <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider mb-1">Red Flags / Warnings</p>
+                                        <div className="space-y-1">
+                                          {result.redFlags.map((flag: any, idx: number) => (
+                                            <div key={idx} className="text-[11px] leading-snug">
+                                              <span className="text-yellow-400 font-semibold">{flag.title}:</span>{' '}
+                                              <span className="text-gray-300">{flag.message}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <p className="text-xs text-gray-500">Technical analysis indicators not available.</p>

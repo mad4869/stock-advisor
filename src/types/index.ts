@@ -220,4 +220,5 @@ export interface SwingScreenerResult {
   signals: string[];
   isPass: boolean;
   error?: string;
+  redFlags?: any[];
 }

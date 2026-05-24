@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runScreenerForSymbol } from '@/lib/swingScreener';
-import { yf } from '@/lib/yahooFinance2';
+import { yf, getComprehensiveAnalysis2 } from '@/lib/yahooFinance2';
 import { historyCache } from '@/lib/cache';
 
 vi.mock('@/lib/yahooFinance2', () => ({
   yf: {
     chart: vi.fn()
-  }
+  },
+  getComprehensiveAnalysis2: vi.fn()
 }));
 
 vi.mock('@/lib/cache', () => ({
@@ -43,6 +44,24 @@ describe('swingScreener', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getComprehensiveAnalysis2).mockResolvedValue({
+      profile: { sector: 'Technology', industry: 'Software' },
+      fundamentals: { currentRatio: 1.5, debtToEquity: 0.2 },
+      dividend: { payoutRatio: 50 },
+      financials: [
+        { year: '2023', totalRevenue: 100, grossMargin: 40, netIncome: 10 },
+        { year: '2024', totalRevenue: 110, grossMargin: 42, netIncome: 12 }
+      ],
+      balanceSheets: [
+        { year: '2023', totalEquity: 50, totalDebt: 10 },
+        { year: '2024', totalEquity: 60, totalDebt: 8 }
+      ],
+      cashFlows: [
+        { year: '2023', freeCashFlow: 10 },
+        { year: '2024', freeCashFlow: 12 }
+      ],
+      analystRating: { buy: 1, hold: 0, sell: 0 }
+    } as any);
   });
 
   describe('data validation', () => {
@@ -77,7 +96,19 @@ describe('swingScreener', () => {
 
   describe('DEFAULT preset', () => {
     it('should pass with good accumulation and TA', async () => {
-      const goodHistory = generateMockHistory(100, 'up');
+      // 95 days flat/consolidation, then 5 days breakout to trigger fresh crossovers and moderate RSI
+      const goodHistory = [];
+      for (let i = 0; i < 100; i++) {
+        const base = i < 95 ? 100 : 100 + (i - 95) * 1.5;
+        goodHistory.push({
+          open: base,
+          high: base + 2,
+          low: base - 2,
+          close: base + 1,
+          volume: 2000000 + (i >= 95 ? (i - 95) * 100000 : 0),
+          adjclose: base + 1
+        });
+      }
       vi.mocked(yf.chart).mockResolvedValue({ quotes: goodHistory } as any);
 
       const result = await runScreenerForSymbol('AAPL', 'US', 'DEFAULT');
@@ -217,6 +248,38 @@ describe('swingScreener', () => {
       const result = await runScreenerForSymbol('AAPL', 'US', 'DEFAULT');
       expect(result.signals).toBeDefined();
       expect(Array.isArray(result.signals)).toBe(true);
+    });
+  });
+
+  describe('red flags integration', () => {
+    it('should fail a stock if it has a danger-level red flag', async () => {
+      const history = generateMockHistory(250, 'up');
+      vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
+      
+      // Mock fundamentals with current ratio < 1.0 (triggers Liquidity Risk danger flag)
+      vi.mocked(getComprehensiveAnalysis2).mockResolvedValue({
+        profile: { sector: 'Technology', industry: 'Software' },
+        fundamentals: { currentRatio: 0.5 },
+        dividend: { payoutRatio: 50 },
+        financials: [],
+        balanceSheets: [],
+        cashFlows: [],
+        analystRating: { buy: 1, hold: 0, sell: 0 }
+      } as any);
+
+      const result = await runScreenerForSymbol('AAPL', 'US', 'DEFAULT');
+      expect(result.isPass).toBe(false);
+      expect(result.signals).toContain('Blocked by Red Flag: Liquidity Risk');
+    });
+  });
+
+  describe('RSI linear interpolation scoring', () => {
+    it('should apply smoothed RSI scoring', async () => {
+      const history = generateMockHistory(250, 'up');
+      vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
+
+      const result = await runScreenerForSymbol('AAPL', 'US', 'DEFAULT');
+      expect(result.taScore).toBeGreaterThan(0);
     });
   });
 });

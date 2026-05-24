@@ -95,6 +95,8 @@ describe('technicalIndicators', () => {
       const result = calculateTA(history);
       expect(result?.pivotS1).toBeCloseTo(93.333, 2);
       expect(result?.distanceToS1).toBeGreaterThan(0);
+      expect(result?.pivotR1).toBeCloseTo(113.333, 2);
+      expect(result?.distanceToR1).toBeGreaterThan(0);
     });
   });
 
@@ -232,6 +234,16 @@ describe('technicalIndicators', () => {
       const history = generateMockData(100);
       const result = calculateTA(history);
       expect(result?.cci).toBeDefined();
+    });
+  });
+
+  describe('trend crossover recency', () => {
+    it('should calculate trend crossover recency metrics', () => {
+      const history = generateMockData(100);
+      const result = calculateTA(history);
+      expect(result).toHaveProperty('emaCrossoverRecency');
+      expect(result).toHaveProperty('priceCrossoverRecency');
+      expect(result).toHaveProperty('macdCrossoverRecency');
     });
   });
 });

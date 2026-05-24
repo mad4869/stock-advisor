@@ -288,6 +288,11 @@ export default function LotCalculator() {
                 minimumFractionDigits: market === 'ID' ? 0 : 2,
               })}
             </p>
+            {market === 'ID' && entryPrice && parseFloat(entryPrice) !== result.price && (
+              <p className="text-xs text-yellow-500 font-medium mt-1">
+                ⚠️ Rounded to valid IDX tick size from Rp{parseFloat(entryPrice).toLocaleString('id-ID')}
+              </p>
+            )}
             {market === 'ID' && (
               <p className="text-xs text-gray-500 mt-1">
                 1 lot = 100 shares = {currencySymbol}

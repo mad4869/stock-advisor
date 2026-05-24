@@ -1,8 +1,9 @@
-import { yf } from './yahooFinance2';
+import { yf, getComprehensiveAnalysis2 } from './yahooFinance2';
 import { calculateTA, TAData } from './technicalIndicators';
 import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
 import { historyCache, singleScreenerCache, CACHE_TTL } from './cache';
 import { Market, SwingScreenerResult } from '@/types';
+import { detectRedFlags } from './redFlags';
 
 export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE';
 
@@ -177,6 +178,22 @@ async function runScreenerForSymbolRaw(
       signals.push('Supertrend Bullish');
     }
 
+    // Trend Crossover Recency Weighting (Bonuses)
+    if (ta.emaCrossoverRecency !== null && ta.emaCrossoverRecency <= 10) {
+      const bonus = ta.emaCrossoverRecency <= 5 ? 5 : 3;
+      trendScore += bonus;
+      signals.push(`Recent Golden Cross (${ta.emaCrossoverRecency}d ago)`);
+    }
+    if (ta.macdCrossoverRecency !== null && ta.macdCrossoverRecency <= 10) {
+      const bonus = ta.macdCrossoverRecency <= 5 ? 5 : 3;
+      trendScore += bonus;
+      signals.push(`Recent MACD Bullish Cross (${ta.macdCrossoverRecency}d ago)`);
+    }
+    if (ta.priceCrossoverRecency !== null && ta.priceCrossoverRecency <= 5) {
+      trendScore += 3;
+      signals.push(`Recent Price EMA20 Cross (${ta.priceCrossoverRecency}d ago)`);
+    }
+
     // Volume
     if (ta.volumeRatio) {
       if (ta.volumeRatio >= config.volumeRatioSurge) { volScore += 15; signals.push('Volume Surge'); }
@@ -188,9 +205,34 @@ async function runScreenerForSymbolRaw(
 
     // Momentum
     if (ta.rsi) {
-      if (ta.rsi >= 40 && ta.rsi <= (config.rsiOverbought - 5)) momScore += 10;
-      else if (ta.rsi > (config.rsiOverbought - 5)) { momScore += 5; signals.push('RSI Extended'); }
-      else { momScore += 0; signals.push('RSI Weak'); }
+      const rsiVal = ta.rsi;
+      const overbought = config.rsiOverbought;
+      const midHigh = overbought - 5;
+      const upperLimit = overbought + 10;
+      
+      let rsiScore = 0;
+      if (rsiVal < 30) {
+        rsiScore = 0;
+        signals.push('RSI Weak');
+      } else if (rsiVal < 45) {
+        rsiScore = ((rsiVal - 30) / 15) * 10;
+        if (rsiVal < 40) signals.push('RSI Weak');
+      } else if (rsiVal <= midHigh) {
+        rsiScore = 10;
+      } else if (rsiVal <= overbought) {
+        const ratio = (rsiVal - midHigh) / (overbought - midHigh);
+        rsiScore = 10 - ratio * 5;
+        signals.push('RSI Extended');
+      } else if (rsiVal <= upperLimit) {
+        const ratio = (rsiVal - overbought) / (upperLimit - overbought);
+        rsiScore = 5 - ratio * 5;
+        signals.push('RSI Overbought');
+      } else {
+        rsiScore = 0;
+        signals.push('RSI Overbought');
+      }
+      
+      momScore += rsiScore;
     }
     if (ta.stochRecovery) {
       momScore += 10;
@@ -259,6 +301,22 @@ async function runScreenerForSymbolRaw(
       const stochReq = ta.stochRecovery;
       taPass = taPass && volReq && emaReq && stochReq;
       if (taPass) signals.push('Short Squeeze Setup');
+    }
+
+    if (taPass) {
+      try {
+        const analysis = await getComprehensiveAnalysis2(cleanSymbol, market);
+        const redFlags = detectRedFlags(analysis);
+        result.redFlags = redFlags;
+
+        const dangerFlags = redFlags.filter(f => f.severity === 'danger');
+        if (dangerFlags.length > 0) {
+          taPass = false;
+          signals.push(`Blocked by Red Flag: ${dangerFlags[0].title}`);
+        }
+      } catch (err: any) {
+        console.warn(`[Screener] Failed to fetch fundamentals/red flags for ${cleanSymbol}: ${err.message}`);
+      }
     }
 
     result.signals = signals;

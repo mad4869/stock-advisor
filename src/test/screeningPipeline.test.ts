@@ -10,7 +10,16 @@ vi.mock('@/lib/yahooFinance2', () => ({
   toYSymbol: (symbol: string, market: string) => {
     const clean = symbol.toUpperCase().replace('.JK', '').replace('.JKT', '').replace(/\s+/g, '').trim();
     return market === 'ID' ? `${clean}.JK` : clean;
-  }
+  },
+  getComprehensiveAnalysis2: vi.fn().mockResolvedValue({
+    profile: { sector: 'Technology', industry: 'Software' },
+    fundamentals: { currentRatio: 1.5, debtToEquity: 0.2 },
+    dividend: { payoutRatio: 50 },
+    financials: [],
+    balanceSheets: [],
+    cashFlows: [],
+    analystRating: { buy: 1, hold: 0, sell: 0 }
+  })
 }));
 
 describe('screeningPipeline', () => {

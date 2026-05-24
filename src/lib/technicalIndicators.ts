@@ -49,6 +49,13 @@ export interface TAData {
   distanceTo52wHigh: number | null; // e.g. 0.05 for 5% away
   pivotS1: number | null;
   distanceToS1: number | null; // e.g. 0.02 for 2% away
+  pivotR1: number | null;
+  distanceToR1: number | null; // e.g. 0.02 for 2% away
+
+  // Trend Crossover Recency
+  emaCrossoverRecency: number | null;
+  priceCrossoverRecency: number | null;
+  macdCrossoverRecency: number | null;
 }
 
 export function calculateTA(historicalData: any[], market?: Market): TAData | null {
@@ -231,23 +238,42 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     distanceTo52wHigh = (fiftyTwoWeekHigh - currentClose) / fiftyTwoWeekHigh;
   }
 
-  // Pivot S1
+  // Pivot S1 & R1
   // Pivot Points using previous day's H, L, C
   let pivotS1 = null;
+  let pivotR1 = null;
   let distanceToS1 = null;
+  let distanceToR1 = null;
   if (highs.length >= 2) {
     const prevH = highs[highs.length - 2];
     const prevL = lows[lows.length - 2];
     const prevC = closes[closes.length - 2];
     const pivot = (prevH + prevL + prevC) / 3;
+    
     const rawS1 = (pivot * 2) - prevH;
     pivotS1 = market === 'ID' ? roundToIDXTick(rawS1) : rawS1;
-    
     if (pivotS1 > 0) {
       // Distance from price to S1. Positive means price is above S1.
       distanceToS1 = (currentClose - pivotS1) / pivotS1;
     }
+
+    const rawR1 = (pivot * 2) - prevL;
+    pivotR1 = market === 'ID' ? roundToIDXTick(rawR1) : rawR1;
+    if (pivotR1 > 0) {
+      // Distance from price to R1. Positive means price is below R1.
+      distanceToR1 = (pivotR1 - currentClose) / pivotR1;
+    }
   }
+
+  // Trend Crossover Recency
+  const ema20Full = EMA.calculate({ period: 20, values: closes });
+  const ema50Full = EMA.calculate({ period: 50, values: closes });
+  const emaCrossoverRecency = findCrossoverRecency(ema20Full, ema50Full, 20);
+  const priceCrossoverRecency = findCrossoverRecency(closes, ema20Full, 20);
+
+  const macdLines = macdData.map(d => d.MACD ?? 0);
+  const macdSignals = macdData.map(d => d.signal ?? 0);
+  const macdCrossoverRecency = findCrossoverRecency(macdLines, macdSignals, 20);
 
   return {
     close: currentClose,
@@ -275,6 +301,40 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     fiftyTwoWeekHigh,
     distanceTo52wHigh,
     pivotS1,
-    distanceToS1
+    distanceToS1,
+    pivotR1,
+    distanceToR1,
+    emaCrossoverRecency,
+    priceCrossoverRecency,
+    macdCrossoverRecency
   };
+}
+
+/**
+ * Finds how many bars ago a bullish crossover occurred (fast crossed above slow).
+ * Returns null if no crossover within the maxLookback period.
+ */
+function findCrossoverRecency(
+  fastValues: number[],
+  slowValues: number[],
+  maxLookback: number = 20
+): number | null {
+  const len = Math.min(fastValues.length, slowValues.length);
+  if (len < 2) return null;
+
+  const fastEnd = fastValues.slice(fastValues.length - len);
+  const slowEnd = slowValues.slice(slowValues.length - len);
+
+  for (let i = 0; i < Math.min(len - 1, maxLookback); i++) {
+    const idx = len - 1 - i;
+    const currentFast = fastEnd[idx];
+    const currentSlow = slowEnd[idx];
+    const prevFast = fastEnd[idx - 1];
+    const prevSlow = slowEnd[idx - 1];
+
+    if (currentFast > currentSlow && prevFast <= prevSlow) {
+      return i; // 0 means crossover on current bar
+    }
+  }
+  return null;
 }
