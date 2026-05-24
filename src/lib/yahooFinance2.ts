@@ -31,6 +31,24 @@ function toYSymbol(symbol: string, market: Market): string {
   return symbol;
 }
 
+async function retryYahooFinanceCall<T>(fn: () => Promise<T>, maxRetries = 3, delay = 500): Promise<T> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      attempt++;
+      if (attempt >= maxRetries) {
+        throw err;
+      }
+      const backoffDelay = delay * Math.pow(2, attempt - 1);
+      console.warn(`[YF2] Error in Yahoo Finance call. Retrying in ${backoffDelay}ms... (Attempt ${attempt}/${maxRetries}): ${err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+    }
+  }
+  throw new Error('Retries failed');
+}
+
 // ============================================================
 // searchStocks2 — for stock search
 // ============================================================
@@ -45,7 +63,7 @@ export async function searchStocks2(
   // Re-use searchCache from cache.ts if we want, or just fetch directly.
   // We'll just fetch directly for simplicity, but let's use the same filtering.
   try {
-    const res = await yahooFinance.search(q);
+    const res = await retryYahooFinanceCall(() => yahooFinance.search(q));
     const quotes = res.quotes;
     
     if (!quotes || !Array.isArray(quotes)) return [];
@@ -114,9 +132,11 @@ export async function getStockFundamentals2(
 
   let summary: any;
   try {
-    summary = await yahooFinance.quoteSummary(ySymbol, {
-      modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData', 'assetProfile'],
-    });
+    summary = await retryYahooFinanceCall(() =>
+      yahooFinance.quoteSummary(ySymbol, {
+        modules: ['summaryDetail', 'defaultKeyStatistics', 'financialData', 'assetProfile'],
+      })
+    );
   } catch (err: any) {
     // For some tickers (often IDX names, delisted symbols, etc.) Yahoo returns no fundamentals.
     // Screener UI expects "no match" rather than a hard error.
@@ -237,20 +257,22 @@ export async function getComprehensiveAnalysis2(
   console.log(`[YF2] Comprehensive Analysis: ${ySymbol}`);
 
   // Single quoteSummary call with all needed modules
-  const result: any = await yahooFinance.quoteSummary(ySymbol, {
-    modules: [
-      'assetProfile',
-      'defaultKeyStatistics',
-      'financialData',
-      'summaryDetail',
-      'earningsTrend',
-      'incomeStatementHistory',
-      'balanceSheetHistory',
-      'cashflowStatementHistory',
-      'calendarEvents',
-      'recommendationTrend',
-    ],
-  });
+  const result: any = await retryYahooFinanceCall(() =>
+    yahooFinance.quoteSummary(ySymbol, {
+      modules: [
+        'assetProfile',
+        'defaultKeyStatistics',
+        'financialData',
+        'summaryDetail',
+        'earningsTrend',
+        'incomeStatementHistory',
+        'balanceSheetHistory',
+        'cashflowStatementHistory',
+        'calendarEvents',
+        'recommendationTrend',
+      ],
+    })
+  );
 
   const ap = result.assetProfile || {};
   const ks = result.defaultKeyStatistics || {};
@@ -451,7 +473,7 @@ export async function getComprehensiveAnalysis2(
     const start = values[startIdx];
     const end = values[endIdx];
     const n = endIdx - startIdx;
-    if (start == null || end == null || start <= 0 || n <= 0) return null;
+    if (start == null || end == null || start <= 0 || end <= 0 || n <= 0) return null;
     return (Math.pow(end / start, 1 / n) - 1) * 100;
   };
 

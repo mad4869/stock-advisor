@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error(`[Analysis API] ${symbol}: ${error.message}`);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch analysis' },
+      { error: 'Failed to fetch analysis' },
       { status: 500 }
     );
   }

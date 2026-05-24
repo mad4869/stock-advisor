@@ -22,11 +22,11 @@ export async function runScreenerForSymbol(
   preset: Preset = 'DEFAULT'
 ): Promise<ScreenerResult> {
   const cleanSymbol = symbol.toUpperCase().replace('.JK', '').replace('.JKT', '').trim();
-  const querySymbol = market === 'ID' && !symbol.endsWith('.JK') ? `${cleanSymbol}.JK` : cleanSymbol;
+  const querySymbol = market === 'ID' ? `${cleanSymbol}.JK` : cleanSymbol;
   const historyCacheKey = `history:${cleanSymbol}:${market}:12`;
 
   const result: ScreenerResult = {
-    symbol,
+    symbol: cleanSymbol,
     market,
     taScore: 0,
     taData: null,

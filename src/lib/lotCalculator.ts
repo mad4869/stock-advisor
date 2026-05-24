@@ -14,10 +14,36 @@ export function calculateLots(
   }
 ): LotCalculation {
   const currency = market === 'ID' ? 'IDR' : 'USD';
-
-  // Indonesian stocks: 1 lot = 100 shares
-  // US stocks: 1 lot = 1 share (no lot system, but we use it for consistency)
   const sharesPerLot = market === 'ID' ? 100 : 1;
+
+  if (entryPrice <= 0 || initialFund <= 0) {
+    return {
+      symbol,
+      market,
+      price: entryPrice,
+      currency,
+      initialFund,
+      lotSize: sharesPerLot,
+      sharesPerLot,
+      totalShares: 0,
+      totalLots: 0,
+      totalCost: 0,
+      remainingFund: initialFund,
+      positionPercent: 0,
+      recommendedLots: 0,
+      recommendedReason: 'Invalid entry price or initial fund.',
+      stopLossPrice: null,
+      riskPercent,
+      riskAmount: 0,
+      riskPerShare: null,
+      maxLossAtStop: null,
+      strictRiskBasedOnly: options?.strictRiskBasedOnly ?? false,
+      bufferPercent: options?.bufferPercent ?? 0,
+      feePerShare: options?.feePerShare ?? 0,
+      effectiveRiskPerShare: null,
+    };
+  }
+
   const pricePerLot = entryPrice * sharesPerLot;
 
   // Maximum lots you can afford

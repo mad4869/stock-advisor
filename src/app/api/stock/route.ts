@@ -31,8 +31,9 @@ export async function GET(request: NextRequest) {
     const quote = await getStockQuote(cleanSymbol, market);
     return NextResponse.json({ quote });
   } catch (error: any) {
+    console.error('Stock API Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch stock data' },
+      { error: 'Failed to fetch stock data' },
       { status: 500 }
     );
   }

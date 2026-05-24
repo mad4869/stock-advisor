@@ -32,6 +32,10 @@ async function fetchYahoo(url: string): Promise<Response> {
 // ============================================================
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { symbol, market } = body;
@@ -187,6 +191,10 @@ async function runTest(name: string, fn: () => Promise<any>): Promise<TestResult
 }
 
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   const searchParams = request.nextUrl.searchParams;
   const testType = searchParams.get('type') || 'all';
 

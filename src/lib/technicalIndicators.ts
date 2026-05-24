@@ -178,7 +178,7 @@ export function calculateTA(historicalData: any[]): TAData | null {
     stochD = lastStoch.d;
     
     // stochK > stochD and rising from below 30
-    stochRecovery = (stochK > stochD) && (stochK > prevStoch.k) && (prevStoch.k < 30 || stochK < 30);
+    stochRecovery = (stochK > stochD) && (stochK > prevStoch.k) && (prevStoch.k < 30);
   }
 
   // CCI

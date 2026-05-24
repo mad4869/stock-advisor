@@ -82,6 +82,42 @@ async function fetchWithTimeout(
   }
 }
 
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  maxRetries = 3,
+  initialDelay = 500
+): Promise<Response> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      const res = await fetchWithTimeout(url, options);
+      if (res.ok) return res;
+
+      // Retry on transient statuses: rate-limit (429) or server errors (500/503)
+      if (res.status === 429 || res.status >= 500) {
+        attempt++;
+        if (attempt >= maxRetries) {
+          throw new Error(`Yahoo HTTP ${res.status}: ${res.statusText}`);
+        }
+        const delay = initialDelay * Math.pow(2, attempt - 1);
+        console.warn(`[Yahoo] Fetch failed with status ${res.status}. Retrying in ${delay}ms... (Attempt ${attempt}/${maxRetries})`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      throw new Error(`Yahoo HTTP ${res.status}: ${res.statusText}`);
+    } catch (e: any) {
+      attempt++;
+      if (attempt >= maxRetries) throw e;
+      const delay = initialDelay * Math.pow(2, attempt - 1);
+      console.warn(`[Yahoo] Network/Timeout error: ${e.message}. Retrying in ${delay}ms... (Attempt ${attempt}/${maxRetries})`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error('Retries failed');
+}
+
 // ============================================================
 // YAHOO FINANCE PROVIDER
 // ============================================================
@@ -89,7 +125,7 @@ async function fetchWithTimeout(
 const YAHOO_BASE = 'https://query1.finance.yahoo.com';
 
 async function yahooFetch(url: string): Promise<any> {
-  const res = await fetchWithTimeout(url, {
+  const res = await fetchWithRetry(url, {
     headers: {
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -97,10 +133,6 @@ async function yahooFetch(url: string): Promise<any> {
       'Accept-Language': 'en-US,en;q=0.9',
     },
   });
-
-  if (!res.ok) {
-    throw new Error(`Yahoo HTTP ${res.status}: ${res.statusText}`);
-  }
 
   return res.json();
 }

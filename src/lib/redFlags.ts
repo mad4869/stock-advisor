@@ -110,11 +110,12 @@ export function detectRedFlags(analysis: ComprehensiveAnalysis): RedFlag[] {
 
   // 6. Declining ROE (3+ consecutive years)
   if (sortedFinancials.length >= 3) {
-    // Compute ROE from financials + balance sheets
+    // Compute ROE from financials + balance sheets matched by year
     const roeValues: number[] = [];
-    for (let i = 0; i < sortedFinancials.length; i++) {
-      const ni = sortedFinancials[i]?.netIncome;
-      const eq = sortedBalanceSheets[i]?.totalEquity;
+    for (const fin of sortedFinancials) {
+      const bs = sortedBalanceSheets.find((b) => b.year === fin.year);
+      const ni = fin?.netIncome;
+      const eq = bs?.totalEquity;
       if (ni != null && eq != null && eq > 0) {
         roeValues.push((ni / eq) * 100);
       }

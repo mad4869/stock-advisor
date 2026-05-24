@@ -43,8 +43,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error: any) {
+    console.error('Stock Detail API Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch stock detail data' },
+      { error: 'Failed to fetch stock detail data' },
       { status: 500 }
     );
   }

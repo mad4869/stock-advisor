@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
         // Calculate PnL
         const multiplier = item.market === 'ID' ? 100 : 1;
         const pnl = (currentPrice - item.buyPrice) * item.quantity * multiplier;
-        const pnlPercent = ((currentPrice - item.buyPrice) / item.buyPrice) * 100;
+        const pnlPercent = item.buyPrice > 0 ? ((currentPrice - item.buyPrice) / item.buyPrice) * 100 : 0;
 
         return {
           id: item.id,
@@ -122,6 +122,6 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Watchlist API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update watchlist' }, { status: 500 });
   }
 }
