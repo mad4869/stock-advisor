@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Market, SwingScreenerResult } from '@/types';
@@ -18,9 +18,18 @@ export default function StockScreener() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
   
   const [tablePage, setTablePage] = useState(1);
   const tablePageSize = 10;
+
+  const isCancelledRef = useRef(false);
+
+  const handleCancelScreen = () => {
+    isCancelledRef.current = true;
+    setLoading(false);
+    setError('Scanning cancelled.');
+  };
 
   const handleRunScreen = async () => {
     setLoading(true);
@@ -28,6 +37,7 @@ export default function StockScreener() {
     setResults([]);
     setProgress(0);
     setTablePage(1);
+    isCancelledRef.current = false;
 
     const universe = marketTab === 'US' ? usUniverse : idUniverse;
     let currentPage = 1;
@@ -36,6 +46,9 @@ export default function StockScreener() {
 
     try {
       while (currentPage <= totalPages) {
+        if (isCancelledRef.current) {
+          break;
+        }
         const res = await fetch(`/api/screener?market=${marketTab}&universe=${universe}&preset=${preset}&page=${currentPage}&limit=10`);
         const data = await res.json();
         
@@ -61,12 +74,14 @@ export default function StockScreener() {
       setError(err.message);
     } finally {
       setLoading(false);
-      setProgress(100);
+      if (!isCancelledRef.current) {
+        setProgress(100);
+      }
     }
   };
 
   const handleRowClick = (symbol: string) => {
-    router.push(`/stock/${symbol.replace('.JK', '')}?market=${marketTab}`);
+    setExpandedSymbol(expandedSymbol === symbol ? null : symbol);
   };
 
   const paginatedResults = results.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize);
@@ -160,11 +175,19 @@ export default function StockScreener() {
 
       {/* Progress Bar */}
       {loading && (
-        <div className="bg-dark-800 rounded-full h-2 overflow-hidden border border-dark-600">
-          <div 
-            className="bg-blue-500 h-full transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="flex items-center gap-4 bg-dark-800 p-3 rounded-xl border border-dark-600 animate-pulse">
+          <div className="flex-1 bg-dark-900 rounded-full h-2 overflow-hidden border border-dark-700">
+            <div 
+              className="bg-blue-500 h-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <button
+            onClick={handleCancelScreen}
+            className="text-xs bg-dark-600 hover:bg-dark-500 text-gray-300 hover:text-white px-3 py-1.5 rounded-lg border border-dark-500 transition-colors"
+          >
+            Cancel Scan
+          </button>
         </div>
       )}
 
@@ -216,61 +239,140 @@ export default function StockScreener() {
                 </tr>
               )}
 
-              {paginatedResults.map((result) => (
-                <tr 
-                  key={result.symbol}
-                  className="border-b border-dark-700 hover:bg-dark-800 cursor-pointer transition-colors"
-                  onClick={() => handleRowClick(result.symbol)}
-                >
-                  <td className="py-3 px-4">
-                    <div className="font-bold text-white">{result.symbol.replace('.JK', '')}</div>
-                    <div className="text-xs text-gray-500">{marketTab === 'US' ? '🇺🇸 US' : '🇮🇩 IDX'}</div>
-                  </td>
-                  <td className="py-3 px-4">
-                    {result.smartMoney ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full ${result.smartMoney.accumulationScore >= 60 ? 'bg-green-500' : result.smartMoney.accumulationScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                            style={{ width: `${Math.min(100, result.smartMoney.accumulationScore)}%` }}
-                          />
+              {paginatedResults.map((result) => {
+                const isExpanded = expandedSymbol === result.symbol;
+                return (
+                  <React.Fragment key={result.symbol}>
+                    <tr 
+                      className="border-b border-dark-700 hover:bg-dark-800 cursor-pointer transition-colors group"
+                      onClick={() => handleRowClick(result.symbol)}
+                    >
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-white">{result.symbol.replace('.JK', '')}</div>
+                        <div className="text-xs text-gray-500">{marketTab === 'US' ? '🇺🇸 US' : '🇮🇩 IDX'}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        {result.smartMoney ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full ${result.smartMoney.accumulationScore >= 60 ? 'bg-green-500' : result.smartMoney.accumulationScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                style={{ width: `${Math.min(100, result.smartMoney.accumulationScore)}%` }}
+                              />
+                            </div>
+                            <span className={`text-xs font-medium ${result.smartMoney.accumulationScore >= 60 ? 'text-green-400' : result.smartMoney.accumulationScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {result.smartMoney.signalCount}/{result.smartMoney.totalSignals}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">N/A</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-blue-500" 
+                              style={{ width: `${Math.min(100, Math.max(0, result.taScore))}%` }}
+                            />
+                          </div>
+                          <span className="text-gray-300 font-medium">{result.taScore}</span>
                         </div>
-                        <span className={`text-xs font-medium ${result.smartMoney.accumulationScore >= 60 ? 'text-green-400' : result.smartMoney.accumulationScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                          {result.smartMoney.signalCount}/{result.smartMoney.totalSignals}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-500">N/A</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-wrap gap-1">
+                          {result.signals.slice(0, 2).map((sig, idx) => (
+                            <span key={idx} className="text-[10px] bg-dark-600 text-gray-300 px-1.5 py-0.5 rounded border border-dark-500">
+                              {sig}
+                            </span>
+                          ))}
+                          {result.signals.length > 2 && (
+                            <span className="text-[10px] text-gray-500">+{result.signals.length - 2} more</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <ChevronRight className={`w-4 h-4 inline text-gray-500 group-hover:text-white transition-transform ${isExpanded ? 'rotate-90 text-white' : ''}`} />
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={5} className="bg-dark-900/60 p-4 border-b border-dark-700">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-gray-300">
+                            {/* Smart Money details */}
+                            <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
+                              <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Smart Money Breakdown</h4>
+                              {result.smartMoney ? (
+                                <div className="space-y-1 text-xs text-gray-300">
+                                  <div>Accumulation Score: <span className="font-semibold text-white">{result.smartMoney.accumulationScore}</span></div>
+                                  <div>Signals Bullish: <span className="font-semibold text-white">{result.smartMoney.signalCount} of {result.smartMoney.totalSignals}</span></div>
+                                  <div className="mt-2 space-y-1">
+                                    <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                      <span>A/D Trend Bullish</span>
+                                      <span className={result.smartMoney.adTrendBullish ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.adTrendBullish ? 'YES' : 'NO'}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                      <span>Chaikin Money Flow (CMF)</span>
+                                      <span className={result.smartMoney.cmfBullish ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.cmf.toFixed(2)} ({result.smartMoney.cmfBullish ? 'BULL' : 'BEAR'})</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                      <span>OBV Volume Divergence</span>
+                                      <span className={result.smartMoney.obvDivergence ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.obvDivergence ? 'YES' : 'NO'}</span>
+                                    </div>
+                                    <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                      <span>Volume Profile Status</span>
+                                      <span className={result.smartMoney.volumeProfileBullish ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.volumeProfileBullish ? 'ACCUMULATING' : 'NEUTRAL'}</span>
+                                    </div>
+                                    <div className="flex justify-between py-0.5">
+                                      <span>Large Block Buying Activity</span>
+                                      <span className={result.smartMoney.largeBlockBuying ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.largeBlockBuying ? 'YES' : 'NO'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-500">Smart money metrics not available.</p>
+                              )}
+                            </div>
+
+                            {/* TA and action details */}
+                            <div className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col justify-between">
+                              <div>
+                                <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Technical Indicators</h4>
+                                {result.taData ? (
+                                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                    <div>RSI (14): <span className="font-semibold text-white">{result.taData.rsi?.toFixed(1) ?? '—'}</span></div>
+                                    <div>ADX (14): <span className="font-semibold text-white">{result.taData.adx?.toFixed(1) ?? '—'}</span></div>
+                                    <div>CCI (20): <span className="font-semibold text-white">{result.taData.cci?.toFixed(1) ?? '—'}</span></div>
+                                    <div>Bollinger %B: <span className="font-semibold text-white">{result.taData.bollingerB?.toFixed(2) ?? '—'}</span></div>
+                                    <div>ATR %: <span className="font-semibold text-white">{result.taData.atrPercent ? `${result.taData.atrPercent.toFixed(1)}%` : '—'}</span></div>
+                                    <div>Vol Ratio: <span className="font-semibold text-white">{result.taData.volumeRatio?.toFixed(1) ?? '—'}x</span></div>
+                                    <div className="col-span-2 mt-1">Supertrend: <span className={result.taData.supertrendBullish ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>{result.taData.supertrendBullish ? 'BULLISH' : 'BEARISH'}</span></div>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-500">Technical analysis indicators not available.</p>
+                                )}
+                              </div>
+
+                              <div className="mt-4 pt-4 border-t border-dark-700 flex items-center justify-between gap-4">
+                                <span className="text-xs text-gray-500">Want to see charts, red flags, and peers?</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/stock/${result.symbol}?market=${marketTab}`);
+                                  }}
+                                  className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1"
+                                >
+                                  View Detailed Analytics <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-blue-500" 
-                          style={{ width: `${Math.min(100, Math.max(0, result.taScore))}%` }}
-                        />
-                      </div>
-                      <span className="text-gray-300 font-medium">{result.taScore}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex flex-wrap gap-1">
-                      {result.signals.slice(0, 2).map((sig, idx) => (
-                        <span key={idx} className="text-[10px] bg-dark-600 text-gray-300 px-1.5 py-0.5 rounded border border-dark-500">
-                          {sig}
-                        </span>
-                      ))}
-                      {result.signals.length > 2 && (
-                        <span className="text-[10px] text-gray-500">+{result.signals.length - 2} more</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <ChevronRight className="w-4 h-4 inline text-gray-500 group-hover:text-white" />
-                  </td>
-                </tr>
-              ))}
+                  </React.Fragment>
+                );
+              })}
               
               {loading && results.length > 0 && (
                 <tr>

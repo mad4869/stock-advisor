@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runScreenerForSymbol } from '@/lib/swingScreener';
 import { getStockQuote } from '@/lib/stockData';
-import { Signal, Market } from '@/types';
+import { Signal, Market, SwingScreenerResult } from '@/types';
+import { singleScreenerCache } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,30 +88,59 @@ export async function POST(request: NextRequest) {
 
     const updates = await processBatched(validItems, CONCURRENCY_LIMIT, async (item: any) => {
       try {
-        const [quote, screener] = await Promise.all([
-          getStockQuote(item.symbol, item.market as Market),
-          runScreenerForSymbol(item.symbol, item.market as Market, 'DEFAULT')
-        ]);
-
+        const quote = await getStockQuote(item.symbol, item.market as Market);
         const currentPrice = quote.price;
-        const taComputed = screener.taData !== null;
-        const currentScore = screener.taScore;
-        const { action, reason } = determineAction(currentScore, taComputed, currentPrice, item.buyPrice, item.stopLossPrice, item.takeProfitPrice);
+
+        const cleanSymbol = item.symbol.toUpperCase().replace('.JK', '').replace('.JKT', '').trim();
+        const cacheKey = `singleScreener:${cleanSymbol}:${item.market}:DEFAULT`;
+        const cachedScreener = singleScreenerCache.get<SwingScreenerResult>(cacheKey);
+
+        let action: Signal | undefined;
+        let reason: string | undefined;
+
+        if (cachedScreener) {
+          const taComputed = cachedScreener.taData !== null;
+          const currentScore = cachedScreener.taScore;
+          const actionDetails = determineAction(
+            currentScore,
+            taComputed,
+            currentPrice,
+            item.buyPrice,
+            item.stopLossPrice,
+            item.takeProfitPrice
+          );
+          action = actionDetails.action;
+          reason = actionDetails.reason;
+        } else {
+          // Cold cache fallback: check stop loss or take profit triggers only
+          if (item.stopLossPrice && currentPrice <= item.stopLossPrice) {
+            action = 'STRONG_SELL';
+            reason = `Stop-loss hit at ${currentPrice}. Protect your capital.`;
+          } else if (item.takeProfitPrice && currentPrice >= item.takeProfitPrice) {
+            action = 'SELL';
+            reason = `Take-profit target reached at ${currentPrice}. Consider locking in gains.`;
+          }
+        }
 
         // Calculate PnL
         const multiplier = item.market === 'ID' ? 100 : 1;
         const pnl = (currentPrice - item.buyPrice) * item.quantity * multiplier;
         const pnlPercent = item.buyPrice > 0 ? ((currentPrice - item.buyPrice) / item.buyPrice) * 100 : 0;
 
-        return {
+        const updateObj: any = {
           id: item.id,
           currentPrice,
           pnl,
           pnlPercent,
-          action,
-          actionReason: reason,
           lastUpdated: new Date().toISOString()
         };
+
+        if (action !== undefined) {
+          updateObj.action = action;
+          updateObj.actionReason = reason;
+        }
+
+        return updateObj;
       } catch (err) {
         console.error(`Error updating watchlist item ${item.symbol}:`, err);
         return null;

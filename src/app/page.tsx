@@ -97,7 +97,7 @@ export default function HomePage() {
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="card">
           <div className="flex items-center gap-3 mb-4">
-            <span className="text-3xl">🇺🇸</span>
+            <span className="text-3xl" aria-hidden="true">🇺🇸</span>
             <div>
               <h3 className="font-bold text-white">US Market (NYSE/NASDAQ)</h3>
               <p className="text-sm text-gray-400">Trade in USD, per-share basis</p>
@@ -105,20 +105,20 @@ export default function HomePage() {
           </div>
           <div className="flex flex-wrap gap-2">
               {['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'].map((s) => (
-              <span
+              <button
                 key={s}
-                className="text-xs bg-dark-600 text-gray-300 px-2 py-1 rounded-lg cursor-pointer hover:bg-dark-500 transition-colors"
+                className="text-xs bg-dark-600 text-gray-300 px-2 py-1 rounded-lg hover:bg-dark-500 transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                 onClick={() => router.push(`/stock/${s}?market=US`)}
               >
                 {s}
-              </span>
+              </button>
             ))}
           </div>
         </div>
 
         <div className="card">
           <div className="flex items-center gap-3 mb-4">
-            <span className="text-3xl">🇮🇩</span>
+            <span className="text-3xl" aria-hidden="true">🇮🇩</span>
             <div>
               <h3 className="font-bold text-white">Indonesia (IDX)</h3>
               <p className="text-sm text-gray-400">
@@ -128,13 +128,13 @@ export default function HomePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {['BBCA', 'BBRI', 'BMRI', 'TLKM', 'ASII', 'UNVR', 'ICBP'].map((s) => (
-              <span
+              <button
                 key={s}
-                className="text-xs bg-dark-600 text-gray-300 px-2 py-1 rounded-lg cursor-pointer hover:bg-dark-500 transition-colors"
+                className="text-xs bg-dark-600 text-gray-300 px-2 py-1 rounded-lg hover:bg-dark-500 transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                 onClick={() => router.push(`/stock/${s}?market=ID`)}
               >
                 {s}
-              </span>
+              </button>
             ))}
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { yf } from './yahooFinance2';
 import { calculateTA, TAData } from './technicalIndicators';
 import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
-import { historyCache, CACHE_TTL } from './cache';
+import { historyCache, singleScreenerCache, CACHE_TTL } from './cache';
 import { Market, SwingScreenerResult } from '@/types';
 
 export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE';
@@ -38,6 +38,21 @@ const MARKET_CONFIGS: Record<Market, MarketConfig> = {
 };
 
 export async function runScreenerForSymbol(
+  symbol: string,
+  market: Market,
+  preset: Preset = 'DEFAULT'
+): Promise<SwingScreenerResult> {
+  const cleanSymbol = symbol.toUpperCase().replace('.JK', '').replace('.JKT', '').trim();
+  const cacheKey = `singleScreener:${cleanSymbol}:${market}:${preset}`;
+  const cached = singleScreenerCache.get<SwingScreenerResult>(cacheKey);
+  if (cached) return cached;
+
+  const result = await runScreenerForSymbolRaw(symbol, market, preset);
+  singleScreenerCache.set(cacheKey, result, CACHE_TTL.SINGLE_SCREENER);
+  return result;
+}
+
+async function runScreenerForSymbolRaw(
   symbol: string,
   market: Market,
   preset: Preset = 'DEFAULT'

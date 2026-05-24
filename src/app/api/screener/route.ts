@@ -6,6 +6,7 @@ import { screenerResultCache, CACHE_TTL } from '@/lib/cache';
 import { Market } from '@/types';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE'];
 const MAX_LIMIT = 50;

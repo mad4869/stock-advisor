@@ -14,8 +14,13 @@ vi.mock('@/lib/cache', () => ({
     get: vi.fn(),
     set: vi.fn()
   },
+  singleScreenerCache: {
+    get: vi.fn(),
+    set: vi.fn()
+  },
   CACHE_TTL: {
-    HISTORICAL: 3600
+    HISTORICAL: 3600,
+    SINGLE_SCREENER: 900
   }
 }));
 

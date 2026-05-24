@@ -72,6 +72,7 @@ export const historyCache = new MemoryCache(200);        // For historical data 
 export const searchCache = new MemoryCache(100);         // For search results
 export const fundamentalsCache = new MemoryCache(200);   // For fundamental data (screener)
 export const screenerResultCache = new MemoryCache(100); // For final screener results
+export const singleScreenerCache = new MemoryCache(300); // For individual symbol screening results
 
 // TTL constants (in seconds)
 export const CACHE_TTL = {
@@ -80,4 +81,5 @@ export const CACHE_TTL = {
   SEARCH: 10 * 60,             // 10 minutes
   FUNDAMENTALS: 30 * 60,       // 30 minutes
   SCREENER_RESULT: 15 * 60,    // 15 minutes
+  SINGLE_SCREENER: 15 * 60,    // 15 minutes
 };

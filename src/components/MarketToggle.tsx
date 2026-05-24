@@ -9,8 +9,14 @@ interface MarketToggleProps {
 
 export default function MarketToggle({ market, onChange }: MarketToggleProps) {
   return (
-    <div className="inline-flex bg-dark-800 rounded-xl border border-dark-500 p-1">
+    <div 
+      className="inline-flex bg-dark-800 rounded-xl border border-dark-500 p-1"
+      role="radiogroup"
+      aria-label="Stock Market Selection"
+    >
       <button
+        role="radio"
+        aria-checked={market === 'US'}
         onClick={() => onChange('US')}
         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
           market === 'US'
@@ -22,6 +28,8 @@ export default function MarketToggle({ market, onChange }: MarketToggleProps) {
         US Market
       </button>
       <button
+        role="radio"
+        aria-checked={market === 'ID'}
         onClick={() => onChange('ID')}
         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
           market === 'ID'
