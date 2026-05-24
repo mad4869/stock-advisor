@@ -11,6 +11,8 @@ import {
   BollingerBands,
   SMA
 } from 'technicalindicators';
+import { Market } from '@/types';
+import { roundToIDXTick } from './tickUtils';
 
 export interface TAData {
   close: number;
@@ -49,7 +51,7 @@ export interface TAData {
   distanceToS1: number | null; // e.g. 0.02 for 2% away
 }
 
-export function calculateTA(historicalData: any[]): TAData | null {
+export function calculateTA(historicalData: any[], market?: Market): TAData | null {
   // historicalData is expected to be oldest to newest
   if (!historicalData || historicalData.length < 20) return null;
 
@@ -238,7 +240,8 @@ export function calculateTA(historicalData: any[]): TAData | null {
     const prevL = lows[lows.length - 2];
     const prevC = closes[closes.length - 2];
     const pivot = (prevH + prevL + prevC) / 3;
-    pivotS1 = (pivot * 2) - prevH;
+    const rawS1 = (pivot * 2) - prevH;
+    pivotS1 = market === 'ID' ? roundToIDXTick(rawS1) : rawS1;
     
     if (pivotS1 > 0) {
       // Distance from price to S1. Positive means price is above S1.

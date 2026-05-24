@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runScreenerForSymbol, Preset, ScreenerResult } from '@/lib/swingScreener';
+import { runScreenerForSymbol, Preset } from '@/lib/swingScreener';
+import { SwingScreenerResult } from '@/types';
 import { US_UNIVERSES, ID_UNIVERSES } from '@/lib/universes';
 import { screenerResultCache, CACHE_TTL } from '@/lib/cache';
 import { Market } from '@/types';
@@ -22,6 +23,13 @@ export async function GET(request: NextRequest) {
   const preset: Preset = VALID_PRESETS.includes(presetRaw as Preset)
     ? (presetRaw as Preset)
     : 'DEFAULT';
+
+  if (market === 'ID' && preset === 'SHORT_SQUEEZE') {
+    return NextResponse.json(
+      { error: 'SHORT_SQUEEZE preset is not supported for IDX market' },
+      { status: 400 }
+    );
+  }
 
   const pageParam = searchParams.get('page');
   const limitParam = searchParams.get('limit');
@@ -52,7 +60,7 @@ export async function GET(request: NextRequest) {
   const chunkSymbols = symbols.slice((page - 1) * limit, page * limit);
   const cacheKey = `screener:${market}:${universeKey}:${preset}:p${page}:l${limit}`;
   
-  const cached = screenerResultCache.get<{ results: ScreenerResult[], pagination: any, timestamp: number }>(cacheKey);
+  const cached = screenerResultCache.get<{ results: SwingScreenerResult[], pagination: any, timestamp: number }>(cacheKey);
   if (cached) {
     return NextResponse.json(cached);
   }
@@ -61,7 +69,7 @@ export async function GET(request: NextRequest) {
     const promises = chunkSymbols.map(sym => runScreenerForSymbol(sym, market, preset));
     const batchResults = await Promise.allSettled(promises);
 
-    const allResults: ScreenerResult[] = [];
+    const allResults: SwingScreenerResult[] = [];
     for (const res of batchResults) {
       if (res.status === 'fulfilled') {
         allResults.push(res.value);

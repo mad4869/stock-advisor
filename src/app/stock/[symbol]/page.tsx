@@ -4,11 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, TrendingUp, TrendingDown, Info, Shield, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ScreenerResult } from '@/lib/swingScreener';
+import { SwingScreenerResult } from '@/types';
 import { StockQuote } from '@/types';
 
 interface DetailData {
-  screener: ScreenerResult | null;
+  screener: SwingScreenerResult | null;
   quote: StockQuote | null;
   profile: any | null;
   errors: {

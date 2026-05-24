@@ -198,3 +198,26 @@ export interface ClosedPosition {
   followedPlan?: boolean;
   planAnalysis?: string;
 }
+
+export interface SwingScreenerResult {
+  symbol: string;
+  market: Market;
+  taScore: number;
+  taData: any;
+  smartMoney: {
+    accumulationScore: number;
+    isAccumulating: boolean;
+    signalCount: number;
+    totalSignals: number;
+    logs: string[];
+    adTrendBullish: boolean;
+    cmf: number;
+    cmfBullish: boolean;
+    volumeProfileBullish: boolean;
+    obvDivergence: boolean;
+    largeBlockBuying: boolean;
+  } | null;
+  signals: string[];
+  isPass: boolean;
+  error?: string;
+}

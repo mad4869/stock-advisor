@@ -29,7 +29,7 @@ describe('swingScreener', () => {
         high: base + 2,
         low: base - 2,
         close: base + 1,
-        volume: 1000 + (trend === 'up' ? i * 10 : 0),
+        volume: 2000000 + (trend === 'up' ? i * 10000 : 0),
         adjclose: base + 1
       });
     }

@@ -8,6 +8,7 @@
 import { StockQuote, HistoricalData, Market } from '@/types';
 import { quoteCache, historyCache, CACHE_TTL } from './cache';
 import { IDX_FULL_LIST, POPULAR_STOCKS, lookupStockName } from './constants';
+import { toYSymbol } from './yahooFinance2';
 
 // ============================================================
 // PUBLIC API
@@ -56,11 +57,6 @@ function cleanSymbol(symbol: string): string {
     .replace('.JKT', '')
     .replace(/\s+/g, '')
     .trim();
-}
-
-function yahooSymbol(symbol: string, market: Market): string {
-  const clean = cleanSymbol(symbol);
-  return market === 'ID' ? `${clean}.JK` : clean;
 }
 
 async function fetchWithTimeout(
@@ -138,7 +134,7 @@ async function yahooFetch(url: string): Promise<any> {
 }
 
 async function getYahooQuote(symbol: string, market: Market): Promise<StockQuote> {
-  const ySymbol = yahooSymbol(symbol, market);
+  const ySymbol = toYSymbol(symbol, market);
 
   const url = `${YAHOO_BASE}/v8/finance/chart/${ySymbol}?range=5d&interval=1d&includePrePost=false`;
   const data = await yahooFetch(url);
@@ -173,7 +169,7 @@ async function getYahooHistorical(
   market: Market,
   months: number
 ): Promise<HistoricalData[]> {
-  const ySymbol = yahooSymbol(symbol, market);
+  const ySymbol = toYSymbol(symbol, market);
   const period1 = Math.floor(Date.now() / 1000 - months * 30.44 * 24 * 60 * 60);
   const period2 = Math.floor(Date.now() / 1000);
 

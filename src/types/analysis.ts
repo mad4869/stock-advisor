@@ -43,7 +43,9 @@ export interface AnnualFinancials {
   // Tax & Debt calculation fields
   incomeBeforeTax?: number | null;
   incomeTaxExpense?: number | null;
+  ebitda?: number | null;
 }
+
 
 export interface AnnualBalanceSheet {
   year: string;
@@ -71,6 +73,7 @@ export interface AnnualCashFlow {
   capitalExpenditure: number | null;
   freeCashFlow: number | null;
   dividendsPaid: number | null;
+  depreciation?: number | null;
 }
 
 // ====== Dividend Info ======

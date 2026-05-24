@@ -1,4 +1,5 @@
 import { Market, LotCalculation } from '@/types';
+import { roundToIDXTick } from './tickUtils';
 
 export function calculateLots(
   symbol: string,
@@ -59,8 +60,11 @@ export function calculateLots(
   // quantity = floor(riskAmount / (entryPrice - stopLossPrice))
   const riskAmount = initialFund * (riskPercent / 100);
 
-  const stop =
+  let stop =
     typeof stopLossPrice === 'number' && Number.isFinite(stopLossPrice) ? stopLossPrice : null;
+  if (market === 'ID' && stop !== null) {
+    stop = roundToIDXTick(stop);
+  }
   const isValidStop = stop !== null && stop > 0 && stop < entryPrice;
   const riskPerShare = isValidStop ? entryPrice - stop! : null;
   const strictRiskBasedOnly = options?.strictRiskBasedOnly ?? false;

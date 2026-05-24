@@ -2,30 +2,51 @@ import { yf } from './yahooFinance2';
 import { calculateTA, TAData } from './technicalIndicators';
 import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
 import { historyCache, CACHE_TTL } from './cache';
-
-export interface ScreenerResult {
-  symbol: string;
-  market: 'US' | 'ID';
-  taScore: number;
-  taData: TAData | null;
-  smartMoney: AccumulationSignals | null;
-  signals: string[];
-  isPass: boolean;
-  error?: string;
-}
+import { Market, SwingScreenerResult } from '@/types';
 
 export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE';
 
+interface MarketConfig {
+  minVolume20Avg: number; // absolute volume floor
+  rsiOverbought: number;
+  rsiOversold: number;
+  volumeRatioBullish: number;
+  volumeRatioSurge: number;
+  minAtrPercent: number;
+  maxAtrPercent: number;
+}
+
+const MARKET_CONFIGS: Record<Market, MarketConfig> = {
+  US: {
+    minVolume20Avg: 100000,    // US stocks should have at least 100k daily average volume
+    rsiOverbought: 70,
+    rsiOversold: 30,
+    volumeRatioBullish: 1.5,
+    volumeRatioSurge: 2.0,
+    minAtrPercent: 1.0,
+    maxAtrPercent: 8.0,
+  },
+  ID: {
+    minVolume20Avg: 1000000,   // IDX stocks should have at least 1M daily average volume (Rp liquidity)
+    rsiOverbought: 80,         // IDX stocks can stay overbought longer
+    rsiOversold: 35,
+    volumeRatioBullish: 1.5,
+    volumeRatioSurge: 2.5,     // IDX needs higher volume surge due to speculative retail spikes
+    minAtrPercent: 1.5,
+    maxAtrPercent: 12.0,       // IDX has higher average volatility
+  }
+};
+
 export async function runScreenerForSymbol(
   symbol: string,
-  market: 'US' | 'ID',
+  market: Market,
   preset: Preset = 'DEFAULT'
-): Promise<ScreenerResult> {
+): Promise<SwingScreenerResult> {
   const cleanSymbol = symbol.toUpperCase().replace('.JK', '').replace('.JKT', '').trim();
   const querySymbol = market === 'ID' ? `${cleanSymbol}.JK` : cleanSymbol;
   const historyCacheKey = `history:${cleanSymbol}:${market}:12`;
 
-  const result: ScreenerResult = {
+  const result: SwingScreenerResult = {
     symbol: cleanSymbol,
     market,
     taScore: 0,
@@ -97,11 +118,23 @@ export async function runScreenerForSymbol(
     // ──────────────────────────────────────────────
     // STEP 3: Calculate TA (only for accumulating stocks)
     // ──────────────────────────────────────────────
-    const ta = calculateTA(history);
+    const config = MARKET_CONFIGS[market];
+
+    // ──────────────────────────────────────────────
+    // STEP 3: Calculate TA (only for accumulating stocks)
+    // ──────────────────────────────────────────────
+    const ta = calculateTA(history, market);
     if (!ta) {
       result.error = 'Failed to calculate TA';
       return result;
     }
+
+    // Absolute volume floor check
+    if (ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
+      result.error = 'Insufficient liquidity';
+      return result;
+    }
+    
     result.taData = ta;
 
     // ──────────────────────────────────────────────
@@ -131,8 +164,8 @@ export async function runScreenerForSymbol(
 
     // Volume
     if (ta.volumeRatio) {
-      if (ta.volumeRatio >= 2.0) { volScore += 15; signals.push('Volume Surge'); }
-      else if (ta.volumeRatio >= 1.5) volScore += 10;
+      if (ta.volumeRatio >= config.volumeRatioSurge) { volScore += 15; signals.push('Volume Surge'); }
+      else if (ta.volumeRatio >= config.volumeRatioBullish) volScore += 10;
       else if (ta.volumeRatio >= 1.0) volScore += 5;
     }
     if (ta.obvTrendPositive) volScore += 10;
@@ -140,8 +173,8 @@ export async function runScreenerForSymbol(
 
     // Momentum
     if (ta.rsi) {
-      if (ta.rsi >= 40 && ta.rsi <= 65) momScore += 10;
-      else if (ta.rsi > 65) { momScore += 5; signals.push('RSI Extended'); }
+      if (ta.rsi >= 40 && ta.rsi <= (config.rsiOverbought - 5)) momScore += 10;
+      else if (ta.rsi > (config.rsiOverbought - 5)) { momScore += 5; signals.push('RSI Extended'); }
       else { momScore += 0; signals.push('RSI Weak'); }
     }
     if (ta.stochRecovery) {
@@ -153,7 +186,7 @@ export async function runScreenerForSymbol(
     if (ta.cci && ta.cci > 0) momScore += 5;
 
     // Structure
-    if (ta.atrPercent && ta.atrPercent >= 1.5 && ta.atrPercent <= 8) structScore += 5;
+    if (ta.atrPercent && ta.atrPercent >= config.minAtrPercent && ta.atrPercent <= config.maxAtrPercent) structScore += 5;
     if (ta.bollingerB && ta.bollingerB > 0.4 && ta.bollingerB < 0.9) structScore += 5;
     if (ta.distanceTo52wHigh && ta.distanceTo52wHigh > 0.03) structScore += 2;
     if (ta.distanceToS1 && ta.distanceToS1 >= 0 && ta.distanceToS1 <= 0.05) {

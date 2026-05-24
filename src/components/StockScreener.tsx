@@ -3,23 +3,9 @@
 import React, { useState } from 'react';
 import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Market } from '@/types';
+import { Market, SwingScreenerResult } from '@/types';
 
 type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE';
-
-interface ScreenerResult {
-  symbol: string;
-  market: Market;
-  taScore: number;
-  smartMoney: {
-    accumulationScore: number;
-    signalCount: number;
-    totalSignals: number;
-    isPass: boolean;
-  } | null;
-  signals: string[];
-  isPass: boolean;
-}
 
 export default function StockScreener() {
   const router = useRouter();
@@ -28,7 +14,7 @@ export default function StockScreener() {
   const [idUniverse, setIdUniverse] = useState('LQ45');
   const [preset, setPreset] = useState<Preset>('DEFAULT');
 
-  const [results, setResults] = useState<ScreenerResult[]>([]);
+  const [results, setResults] = useState<SwingScreenerResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
@@ -46,7 +32,7 @@ export default function StockScreener() {
     const universe = marketTab === 'US' ? usUniverse : idUniverse;
     let currentPage = 1;
     let totalPages = 1;
-    let accumulatedResults: ScreenerResult[] = [];
+    let accumulatedResults: SwingScreenerResult[] = [];
 
     try {
       while (currentPage <= totalPages) {

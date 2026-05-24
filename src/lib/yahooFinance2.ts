@@ -24,11 +24,14 @@ import { Market } from '@/types';
 
 
 // Build the Yahoo symbol (add .JK suffix for Indonesian stocks)
-function toYSymbol(symbol: string, market: Market): string {
-  if (market === 'ID') {
-    return symbol.endsWith('.JK') ? symbol : `${symbol}.JK`;
-  }
-  return symbol;
+export function toYSymbol(symbol: string, market: Market): string {
+  const clean = symbol
+    .toUpperCase()
+    .replace('.JK', '')
+    .replace('.JKT', '')
+    .replace(/\s+/g, '')
+    .trim();
+  return market === 'ID' ? `${clean}.JK` : clean;
 }
 
 async function retryYahooFinanceCall<T>(fn: () => Promise<T>, maxRetries = 3, delay = 500): Promise<T> {
@@ -365,6 +368,13 @@ export async function getComprehensiveAnalysis2(
   };
 
   // ---- Income Statements ----
+  const rawCFStatements = (result.cashflowStatementHistory as any)?.cashflowStatements || [];
+  const getDepreciationForDate = (endDate: string): number => {
+    const cfStmt = rawCFStatements.find((s: any) => fmtDate(s.endDate) === endDate);
+    if (!cfStmt) return 0;
+    return r(cfStmt.depreciation) ?? r(cfStmt.depreciationAndAmortization) ?? r(cfStmt.depreciationAmortizationDepletion) ?? 0;
+  };
+
   const incomeStatements: AnnualFinancials[] = (
     (result.incomeStatementHistory as any)?.incomeStatementHistory || []
   ).map((stmt: any) => {
@@ -372,6 +382,7 @@ export async function getComprehensiveAnalysis2(
     const gp = r(stmt.grossProfit);
     const oi = r(stmt.operatingIncome);
     const ni = r(stmt.netIncome);
+    const dep = getDepreciationForDate(fmtDate(stmt.endDate));
     const year = fmtDate(stmt.endDate).slice(0, 4);
     return {
       year,
@@ -381,6 +392,7 @@ export async function getComprehensiveAnalysis2(
       operatingIncome: oi,
       netIncome: ni,
       ebit: r(stmt.ebit) ?? oi,
+      ebitda: oi != null ? oi + dep : null,
       eps: r(stmt.dilutedEps) ?? r(stmt.basicEps),
       interestExpense: r(stmt.interestExpense),
       grossMargin: rev && gp ? (gp / rev) * 100 : null,
@@ -432,6 +444,7 @@ export async function getComprehensiveAnalysis2(
     const ocf = r(stmt.totalCashFromOperatingActivities);
     const rawCapex = r(stmt.capitalExpenditures);
     const capexAbs = rawCapex != null ? Math.abs(rawCapex) : null;
+    const dep = r(stmt.depreciation) ?? r(stmt.depreciationAndAmortization) ?? r(stmt.depreciationAmortizationDepletion) ?? null;
     const year = fmtDate(stmt.endDate).slice(0, 4);
     return {
       year,
@@ -440,6 +453,7 @@ export async function getComprehensiveAnalysis2(
       capitalExpenditure: capexAbs,
       freeCashFlow: ocf != null && capexAbs != null ? ocf - capexAbs : null,
       dividendsPaid: r(stmt.dividendsPaid) != null ? Math.abs(r(stmt.dividendsPaid)!) : null,
+      depreciation: dep,
     };
   }).sort((a: AnnualCashFlow, b: AnnualCashFlow) => a.year.localeCompare(b.year));
 
@@ -468,7 +482,8 @@ export async function getComprehensiveAnalysis2(
 
   // ---- CAGR ----
   const computeCAGR = (values: (number | null)[], years: number): number | null => {
-    const startIdx = Math.max(0, values.length - years - 1);
+    if (values.length < years + 1) return null;
+    const startIdx = values.length - years - 1;
     const endIdx = values.length - 1;
     const start = values[startIdx];
     const end = values[endIdx];
@@ -498,8 +513,8 @@ export async function getComprehensiveAnalysis2(
       ? Math.abs(latestIncome.ebit / latestIncome.interestExpense)
       : null;
   const debtToEbitda =
-    latestBS?.totalDebt != null && latestIncome?.operatingIncome
-      ? latestBS.totalDebt / latestIncome.operatingIncome
+    latestBS?.totalDebt != null && latestIncome?.ebitda != null && latestIncome.ebitda !== 0
+      ? latestBS.totalDebt / latestIncome.ebitda
       : null;
 
   const analysis: ComprehensiveAnalysis = {
