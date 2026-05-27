@@ -1,11 +1,11 @@
 'use client';
 import Link from 'next/link';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
-import { Market, WatchlistItem } from '@/types';
+import { Market, WatchlistItem, Signal } from '@/types';
 import SignalBadge from './SignalBadge';
 import MarketToggle from './MarketToggle';
 import StockSearch from './StockSearch';
@@ -20,7 +20,35 @@ import {
   AlertCircle,
   Loader2,
   Pencil,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Filter,
+  ChevronDown,
 } from 'lucide-react';
+
+type MarketTab = 'ALL' | 'US' | 'ID';
+type SortField = 'pnlPercent' | 'name' | 'buyDate' | 'currentPrice' | 'buyPrice';
+type SortDirection = 'asc' | 'desc';
+type SignalFilter = 'ALL' | Signal;
+
+const SORT_OPTIONS: { value: SortField; label: string }[] = [
+  { value: 'pnlPercent', label: 'P&L %' },
+  { value: 'name', label: 'Name' },
+  { value: 'buyDate', label: 'Buy Date' },
+  { value: 'currentPrice', label: 'Current Price' },
+  { value: 'buyPrice', label: 'Buy Price' },
+];
+
+const SIGNAL_OPTIONS: { value: SignalFilter; label: string; color: string }[] = [
+  { value: 'ALL', label: 'All Signals', color: 'text-gray-400' },
+  { value: 'STRONG_BUY', label: 'Strong Buy', color: 'text-emerald-400' },
+  { value: 'BUY', label: 'Buy', color: 'text-green-400' },
+  { value: 'HOLD', label: 'Hold', color: 'text-yellow-400' },
+  { value: 'SELL', label: 'Sell', color: 'text-orange-400' },
+  { value: 'STRONG_SELL', label: 'Strong Sell', color: 'text-red-400' },
+  { value: 'NO_SIGNAL', label: 'No Signal', color: 'text-slate-400' },
+];
 
 export function buildClosedPositionFromWatchlistItem({
   item,
@@ -74,6 +102,52 @@ export function buildClosedPositionFromWatchlistItem({
   };
 }
 
+function MarketSummaryBar({ items, market, formatCurrency }: {
+  items: WatchlistItem[];
+  market: Market;
+  formatCurrency: (v: number, m: Market) => string;
+}) {
+  const winners = items.filter((i) => (i.pnlPercent ?? 0) >= 0).length;
+  const losers = items.length - winners;
+  const avgPnl = items.length > 0
+    ? items.reduce((sum, i) => sum + (i.pnlPercent ?? 0), 0) / items.length
+    : 0;
+  const totalInvested = items.reduce((sum, i) => sum + i.buyPrice * i.quantity * (market === 'ID' ? 100 : 1), 0);
+  const totalCurrent = items.reduce((sum, i) => sum + (i.currentPrice ?? i.buyPrice) * i.quantity * (market === 'ID' ? 100 : 1), 0);
+  const totalPnl = totalCurrent - totalInvested;
+  const isPositive = avgPnl >= 0;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Positions</p>
+        <p className="text-lg font-bold text-white">{items.length}</p>
+      </div>
+      <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Win / Loss</p>
+        <p className="text-lg font-bold">
+          <span className="text-green-400">{winners}</span>
+          <span className="text-gray-600 mx-1">/</span>
+          <span className="text-red-400">{losers}</span>
+        </p>
+      </div>
+      <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Avg P&L</p>
+        <p className={`text-lg font-bold flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+          {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+          {isPositive ? '+' : ''}{avgPnl.toFixed(2)}%
+        </p>
+      </div>
+      <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Total P&L</p>
+        <p className={`text-lg font-bold ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {totalPnl >= 0 ? '+' : ''}{formatCurrency(totalPnl, market)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function WatchlistTable() {
   const hydrated = useHydration();
   const { closePosition, clearClosedPositions } = usePortfolioStore();
@@ -88,6 +162,13 @@ export default function WatchlistTable() {
   const [addDate, setAddDate] = useState(new Date().toISOString().split('T')[0]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  // Filter & sort state
+  const [marketTab, setMarketTab] = useState<MarketTab>('ALL');
+  const [sortField, setSortField] = useState<SortField>('pnlPercent');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
+  const [showFilters, setShowFilters] = useState(false);
 
   const refreshWatchlist = useCallback(async () => {
     if (items.length === 0) return;
@@ -129,6 +210,42 @@ export default function WatchlistTable() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated]);
+
+  // Derived: filtered & sorted items
+  const usItems = useMemo(() => items.filter((i) => i.market === 'US'), [items]);
+  const idItems = useMemo(() => items.filter((i) => i.market === 'ID'), [items]);
+
+  const filteredAndSortedItems = useMemo(() => {
+    let filtered = marketTab === 'ALL' ? items : marketTab === 'US' ? usItems : idItems;
+
+    if (signalFilter !== 'ALL') {
+      filtered = filtered.filter((i) => i.action === signalFilter);
+    }
+
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'pnlPercent':
+          cmp = (a.pnlPercent ?? 0) - (b.pnlPercent ?? 0);
+          break;
+        case 'name':
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case 'buyDate':
+          cmp = a.buyDate.localeCompare(b.buyDate);
+          break;
+        case 'currentPrice':
+          cmp = (a.currentPrice ?? 0) - (b.currentPrice ?? 0);
+          break;
+        case 'buyPrice':
+          cmp = a.buyPrice - b.buyPrice;
+          break;
+      }
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+
+    return sorted;
+  }, [items, usItems, idItems, marketTab, signalFilter, sortField, sortDirection]);
 
   const handleAdd = async () => {
     if (!addSymbol || !addBuyPrice || !addQuantity) {
@@ -179,6 +296,10 @@ export default function WatchlistTable() {
     })}`;
   };
 
+  const toggleSortDirection = () => {
+    setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+  };
+
   // Show loading skeleton until hydrated
   if (!hydrated) {
     return (
@@ -190,6 +311,12 @@ export default function WatchlistTable() {
       </div>
     );
   }
+
+  const marketTabs: { key: MarketTab; label: string; count: number }[] = [
+    { key: 'ALL', label: 'All', count: items.length },
+    { key: 'US', label: '🇺🇸 US', count: usItems.length },
+    { key: 'ID', label: '🇮🇩 IDX', count: idItems.length },
+  ];
 
   return (
     <div className="space-y-6">
@@ -360,23 +487,170 @@ export default function WatchlistTable() {
           </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {items.map((item) => (
-            <WatchlistCard
-              key={item.id}
-              item={item}
-              onRemove={() => removeItem(item.id)}
-              onClose={(sellPrice: number) => {
-                closePosition(buildClosedPositionFromWatchlistItem({ item, sellPrice }));
-                removeItem(item.id);
-              }}
-              onUpdate={(updates) => {
-                updateItem(item.id, updates);
-                setTimeout(() => refreshWatchlist(), 500);
-              }}
-              formatCurrency={formatCurrency}
-            />
-          ))}
+        <div className="space-y-5">
+          {/* Market Tabs */}
+          <div className="flex items-center gap-1 bg-dark-800 rounded-xl p-1 border border-dark-600">
+            {marketTabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setMarketTab(tab.key)}
+                className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  marketTab === tab.key
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                    : 'text-gray-400 hover:text-white hover:bg-dark-600'
+                }`}
+              >
+                {tab.label}
+                {tab.count > 0 && (
+                  <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
+                    marketTab === tab.key
+                      ? 'bg-blue-500/40 text-blue-100'
+                      : 'bg-dark-500 text-gray-500'
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort & Filter Controls */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* Sort */}
+            <div className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <span>Sort</span>
+              </div>
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value as SortField)}
+                className="bg-dark-800 border border-dark-500 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none flex-1 sm:flex-initial"
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={toggleSortDirection}
+                className={`p-2 rounded-lg border transition-all duration-200 ${
+                  sortDirection === 'desc'
+                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                    : 'bg-dark-800 border-dark-500 text-gray-400 hover:text-white'
+                }`}
+                title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+              >
+                {sortDirection === 'asc' ? (
+                  <ArrowUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ArrowDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+
+            {/* Signal Filter */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <Filter className="w-3.5 h-3.5" />
+                <span>Signal</span>
+              </div>
+              <select
+                value={signalFilter}
+                onChange={(e) => setSignalFilter(e.target.value as SignalFilter)}
+                className="bg-dark-800 border border-dark-500 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none flex-1 sm:flex-initial"
+              >
+                {SIGNAL_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {signalFilter !== 'ALL' && (
+                <button
+                  onClick={() => setSignalFilter('ALL')}
+                  className="p-2 rounded-lg bg-dark-800 border border-dark-500 text-gray-400 hover:text-white hover:border-dark-400 transition-all duration-200"
+                  title="Clear filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Market Summary */}
+          {marketTab === 'ALL' && items.length > 0 && (
+            <div className="space-y-4">
+              {usItems.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-1.5">
+                    🇺🇸 US Market
+                  </h3>
+                  <MarketSummaryBar items={usItems} market="US" formatCurrency={formatCurrency} />
+                </div>
+              )}
+              {idItems.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-1.5">
+                    🇮🇩 IDX Market
+                  </h3>
+                  <MarketSummaryBar items={idItems} market="ID" formatCurrency={formatCurrency} />
+                </div>
+              )}
+            </div>
+          )}
+          {marketTab === 'US' && usItems.length > 0 && (
+            <MarketSummaryBar items={usItems} market="US" formatCurrency={formatCurrency} />
+          )}
+          {marketTab === 'ID' && idItems.length > 0 && (
+            <MarketSummaryBar items={idItems} market="ID" formatCurrency={formatCurrency} />
+          )}
+
+          {/* Filtered items count */}
+          {(signalFilter !== 'ALL' || marketTab !== 'ALL') && (
+            <p className="text-xs text-gray-500">
+              Showing {filteredAndSortedItems.length} of {items.length} positions
+              {signalFilter !== 'ALL' && (
+                <span className="ml-1">
+                  · filtered by <span className="text-gray-400">{SIGNAL_OPTIONS.find((s) => s.value === signalFilter)?.label}</span>
+                </span>
+              )}
+            </p>
+          )}
+
+          {/* Stock Cards */}
+          {filteredAndSortedItems.length === 0 ? (
+            <div className="card text-center py-8">
+              <Filter className="w-8 h-8 text-gray-600 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">No positions match the current filters.</p>
+              <button
+                onClick={() => { setSignalFilter('ALL'); setMarketTab('ALL'); }}
+                className="mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                Clear all filters
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredAndSortedItems.map((item) => (
+                <WatchlistCard
+                  key={item.id}
+                  item={item}
+                  onRemove={() => removeItem(item.id)}
+                  onClose={(sellPrice: number) => {
+                    closePosition(buildClosedPositionFromWatchlistItem({ item, sellPrice }));
+                    removeItem(item.id);
+                  }}
+                  onUpdate={(updates) => {
+                    updateItem(item.id, updates);
+                    setTimeout(() => refreshWatchlist(), 500);
+                  }}
+                  formatCurrency={formatCurrency}
+                />
+              ))}
+            </div>
+          )}
 
           {items.length > 1 && (
             <button
