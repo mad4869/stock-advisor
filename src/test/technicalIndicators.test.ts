@@ -39,7 +39,7 @@ describe('technicalIndicators', () => {
     it('should filter out invalid data points', () => {
       const history = generateMockData(25);
       history[10].close = 0;
-      history[11].high = null;
+      history[11].high = null as any;
       
       const result = calculateTA(history);
       expect(result).not.toBeNull();

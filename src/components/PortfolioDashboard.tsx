@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
-import { Market, MarketPnL, PortfolioSummary, ClosedPosition, MarketSnapshotData, WatchlistItem } from '@/types';
+import { Market, MarketPnL, PortfolioSummary, ClosedPosition, MarketSnapshotData, WatchlistItem, PortfolioSnapshot } from '@/types';
 import {
     PieChart,
     Award,
@@ -488,6 +488,7 @@ export default function PortfolioDashboard() {
                 <MonthlyProfitSection
                     closedPositions={closedPositions}
                     watchlistItems={watchlistItems}
+                    snapshots={snapshots}
                     hasUS={
                         closedPositions.some((p) => p.market === 'US') ||
                         watchlistItems.some((i) => i.market === 'US')
@@ -543,66 +544,97 @@ export default function PortfolioDashboard() {
 // ============================================================
 
 interface MonthlyStats {
-    month: string;        // 'YYYY-MM'
-    label: string;        // 'Jan 2025'
-    realizedPnl: number;  // from closed positions (sold in this month)
-    floatingPnl: number;  // from open positions (bought in this month, still open)
-    trades: number;       // closed trades count
+    month: string;          // 'YYYY-MM'
+    label: string;          // 'Jan 2025'
+    realizedPnl: number;    // from closed positions (sold in this month)
+    floatingPnlDelta: number; // change in total unrealized P&L DURING this month
+    trades: number;         // closed trades count
     wins: number;
     losses: number;
     winRate: number;
-    avgPnlPercent: number;
-    openPositions: number; // open positions count bought this month
+    openPositions: number;  // positions open at end of month
+    hasFloatingData: boolean; // whether snapshot data exists for this month
 }
 
+/**
+ * Build monthly stats with:
+ * - Realized P&L: grouped by sellDate month (same as before)
+ * - Unrealized P&L DELTA: how much total unrealized changed during each month.
+ *   Computed by taking (end-of-month snapshot unrealized) - (end-of-previous-month snapshot unrealized).
+ *   Each month starts from zero. For the current month, live watchlist data is used.
+ */
 function buildCombinedMonthlyStats(
     closedPositions: ClosedPosition[],
+    snapshots: PortfolioSnapshot[],
     watchlistItems: WatchlistItem[],
     market: Market
 ): MonthlyStats[] {
     // --- Realized: group by sellDate month ---
-    const realMap = new Map<string, { pnl: number; trades: number; wins: number; losses: number; pnlPercentSum: number }>();
+    const realMap = new Map<string, { pnl: number; trades: number; wins: number; losses: number }>();
     closedPositions
         .filter((p) => p.market === market)
         .forEach((p) => {
             const month = p.sellDate.slice(0, 7);
-            const e = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0, pnlPercentSum: 0 };
+            const e = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0 };
             realMap.set(month, {
                 pnl: e.pnl + p.pnl,
                 trades: e.trades + 1,
                 wins: e.wins + (p.pnlPercent >= 0 ? 1 : 0),
                 losses: e.losses + (p.pnlPercent < 0 ? 1 : 0),
-                pnlPercentSum: e.pnlPercentSum + p.pnlPercent,
             });
         });
 
-    // --- Floating: group by buyDate month ---
-    const floatMap = new Map<string, { pnl: number; count: number }>();
-    watchlistItems
-        .filter((i) => i.market === market)
-        .forEach((i) => {
-            const month = i.buyDate.slice(0, 7);
-            const e = floatMap.get(month) ?? { pnl: 0, count: 0 };
-            floatMap.set(month, { pnl: e.pnl + (i.pnl ?? 0), count: e.count + 1 });
-        });
+    // --- Unrealized snapshots: end-of-month total unrealized and position count ---
+    // Take the LAST snapshot of each month for this market
+    const endOfMonthUnrealized = new Map<string, { pnl: number; count: number }>();
+    snapshots.forEach((s) => {
+        const month = s.date.slice(0, 7);
+        const mktData = market === 'US' ? s.us : s.id;
+        if (!mktData || typeof mktData.totalPnL !== 'number') return;
+        // Overwrite: snapshots are chronological, so last one wins
+        endOfMonthUnrealized.set(month, { pnl: mktData.totalPnL, count: mktData.positionCount || 0 });
+    });
+
+    // For the current month, use live watchlist data
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const marketItems = watchlistItems.filter((i) => i.market === market);
+    if (marketItems.length > 0) {
+        const multiplier = market === 'ID' ? 100 : 1;
+        const liveUnrealized = marketItems.reduce(
+            (sum, i) => sum + (i.currentPrice - i.buyPrice) * i.quantity * multiplier,
+            0
+        );
+        endOfMonthUnrealized.set(currentMonth, { pnl: liveUnrealized, count: marketItems.length });
+    }
+
+    // Sort all months with snapshot data and compute deltas
+    const snapshotMonthsSorted = Array.from(endOfMonthUnrealized.keys()).sort();
+    const unrealizedDeltaMap = new Map<string, { delta: number; endCount: number }>();
+    for (let i = 0; i < snapshotMonthsSorted.length; i++) {
+        const month = snapshotMonthsSorted[i];
+        const endPnl = endOfMonthUnrealized.get(month)!.pnl;
+        const endCount = endOfMonthUnrealized.get(month)!.count;
+        const prevPnl = i > 0 ? (endOfMonthUnrealized.get(snapshotMonthsSorted[i - 1])?.pnl ?? 0) : 0;
+        unrealizedDeltaMap.set(month, { delta: endPnl - prevPnl, endCount });
+    }
 
     // --- Union of all months ---
-    const allMonths = Array.from(new Set([...realMap.keys(), ...floatMap.keys()])).sort();
+    const allMonths = Array.from(new Set([...realMap.keys(), ...unrealizedDeltaMap.keys()])).sort();
 
     return allMonths.map((month) => {
-        const r = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0, pnlPercentSum: 0 };
-        const f = floatMap.get(month) ?? { pnl: 0, count: 0 };
+        const r = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0 };
+        const u = unrealizedDeltaMap.get(month);
         return {
             month,
             label: new Date(month + '-02').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
             realizedPnl: r.pnl,
-            floatingPnl: f.pnl,
+            floatingPnlDelta: u?.delta ?? 0,
             trades: r.trades,
             wins: r.wins,
             losses: r.losses,
             winRate: r.trades > 0 ? (r.wins / r.trades) * 100 : 0,
-            avgPnlPercent: r.trades > 0 ? r.pnlPercentSum / r.trades : 0,
-            openPositions: f.count,
+            openPositions: u?.endCount ?? 0,
+            hasFloatingData: u != null,
         };
     });
 }
@@ -617,27 +649,36 @@ function fmtAbs(value: number, market: Market): string {
 function MonthlyProfitSection({
     closedPositions,
     watchlistItems,
+    snapshots,
     hasUS,
     hasID,
 }: {
     closedPositions: ClosedPosition[];
     watchlistItems: WatchlistItem[];
+    snapshots: PortfolioSnapshot[];
     hasUS: boolean;
     hasID: boolean;
 }) {
     const [market, setMarket] = useState<Market>(hasUS ? 'US' : 'ID');
 
     const monthlyStats = useMemo(
-        () => buildCombinedMonthlyStats(closedPositions, watchlistItems, market),
-        [closedPositions, watchlistItems, market]
+        () => buildCombinedMonthlyStats(closedPositions, snapshots, watchlistItems, market),
+        [closedPositions, snapshots, watchlistItems, market]
     );
 
     const totalRealized = monthlyStats.reduce((s, m) => s + m.realizedPnl, 0);
-    const totalFloating = monthlyStats.reduce((s, m) => s + m.floatingPnl, 0);
     const totalTrades   = monthlyStats.reduce((s, m) => s + m.trades, 0);
     const totalWins     = monthlyStats.reduce((s, m) => s + m.wins, 0);
-    const totalOpen     = monthlyStats.reduce((s, m) => s + m.openPositions, 0);
     const overallWinRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0;
+
+    // Current absolute unrealized (not sum of deltas) for the totals row
+    const multiplier = market === 'ID' ? 100 : 1;
+    const currentOpenItems = watchlistItems.filter((i) => i.market === market);
+    const currentAbsUnrealized = currentOpenItems.reduce(
+        (sum, i) => sum + (i.currentPrice - i.buyPrice) * i.quantity * multiplier,
+        0
+    );
+    const currentOpenCount = currentOpenItems.length;
 
     const realizedMonths = monthlyStats.filter((m) => m.trades > 0);
     const bestMonth = realizedMonths.length > 0
@@ -686,18 +727,18 @@ function MonthlyProfitSection({
             {/* Summary chips */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Realized P&L</p>
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Total Realized</p>
                     <p className={`text-base font-bold ${totalRealized >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {totalRealized >= 0 ? '+' : ''}{prefix}{fmtAbs(totalRealized, market)}
                     </p>
                     <p className="text-[10px] text-gray-600 mt-0.5">{totalTrades} closed trade{totalTrades !== 1 ? 's' : ''}</p>
                 </div>
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Floating P&L</p>
-                    <p className={`text-base font-bold ${totalFloating >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
-                        {totalFloating >= 0 ? '+' : ''}{prefix}{fmtAbs(totalFloating, market)}
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Current Unrealized</p>
+                    <p className={`text-base font-bold ${currentAbsUnrealized >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+                        {currentAbsUnrealized >= 0 ? '+' : ''}{prefix}{fmtAbs(currentAbsUnrealized, market)}
                     </p>
-                    <p className="text-[10px] text-gray-600 mt-0.5">{totalOpen} open position{totalOpen !== 1 ? 's' : ''}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{currentOpenCount} open position{currentOpenCount !== 1 ? 's' : ''}</p>
                 </div>
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
                     <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Best Month</p>
@@ -739,11 +780,11 @@ function MonthlyProfitSection({
                 </span>
                 <span className="flex items-center gap-1.5">
                     <span className="inline-block w-3 h-3 rounded-sm bg-blue-400 opacity-70" />
-                    Floating profit
+                    Unrealized Δ gain
                 </span>
                 <span className="flex items-center gap-1.5">
                     <span className="inline-block w-3 h-3 rounded-sm bg-orange-400 opacity-70" />
-                    Floating loss
+                    Unrealized Δ loss
                 </span>
             </div>
 
@@ -780,13 +821,13 @@ function MonthlyProfitSection({
                                     const sign = value >= 0 ? '+' : '-';
                                     const formatted = sign + prefix + fmtAbs(value, market);
                                     if (name === 'realizedPnl') return [formatted, 'Realized P&L'];
-                                    if (name === 'floatingPnl') return [formatted, 'Floating P&L'];
+                                    if (name === 'floatingPnlDelta') return [formatted, 'Unrealized Δ'];
                                     return [value, name];
                                 }}
                                 cursor={{ fill: '#2a2a38' }}
                             />
                             <ReferenceLine y={0} stroke="#3a3a4d" strokeWidth={1} />
-                            {/* Realized bar — colored by sign */}
+                            {/* Realized bar */}
                             <Bar dataKey="realizedPnl" radius={[3, 3, 0, 0]} maxBarSize={40}>
                                 {monthlyStats.map((entry, index) => (
                                     <Cell
@@ -796,13 +837,13 @@ function MonthlyProfitSection({
                                     />
                                 ))}
                             </Bar>
-                            {/* Floating bar — blue/orange by sign, slightly translucent */}
-                            <Bar dataKey="floatingPnl" radius={[3, 3, 0, 0]} maxBarSize={40}>
+                            {/* Unrealized delta bar */}
+                            <Bar dataKey="floatingPnlDelta" radius={[3, 3, 0, 0]} maxBarSize={40}>
                                 {monthlyStats.map((entry, index) => (
                                     <Cell
                                         key={`float-${index}`}
-                                        fill={entry.floatingPnl >= 0 ? '#60a5fa' : '#fb923c'}
-                                        fillOpacity={entry.openPositions === 0 ? 0 : 0.75}
+                                        fill={entry.floatingPnlDelta >= 0 ? '#60a5fa' : '#fb923c'}
+                                        fillOpacity={!entry.hasFloatingData ? 0 : 0.75}
                                     />
                                 ))}
                             </Bar>
@@ -822,7 +863,7 @@ function MonthlyProfitSection({
                             <th className="text-right py-2 px-3">Win %</th>
                             <th className="text-right py-2 px-3">Realized P&L</th>
                             <th className="text-right py-2 px-3">Open</th>
-                            <th className="text-right py-2 px-3">Floating P&L</th>
+                            <th className="text-right py-2 px-3">Unrealized Δ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -861,10 +902,10 @@ function MonthlyProfitSection({
                                     {row.openPositions > 0 ? row.openPositions : <span className="text-gray-600">—</span>}
                                 </td>
                                 <td className={`py-2.5 px-3 text-right font-semibold ${
-                                    row.openPositions === 0 ? 'text-gray-600' : row.floatingPnl >= 0 ? 'text-blue-400' : 'text-orange-400'
+                                    !row.hasFloatingData ? 'text-gray-600' : row.floatingPnlDelta >= 0 ? 'text-blue-400' : 'text-orange-400'
                                 }`}>
-                                    {row.openPositions > 0 ? (
-                                        <>{row.floatingPnl >= 0 ? '+' : '-'}{prefix}{fmtAbs(row.floatingPnl, market)}</>
+                                    {row.hasFloatingData ? (
+                                        <>{row.floatingPnlDelta >= 0 ? '+' : '-'}{prefix}{fmtAbs(row.floatingPnlDelta, market)}</>
                                     ) : (
                                         <span className="text-gray-600 font-normal">—</span>
                                     )}
@@ -890,11 +931,12 @@ function MonthlyProfitSection({
                             }`}>
                                 {totalRealized >= 0 ? '+' : '-'}{prefix}{fmtAbs(totalRealized, market)}
                             </td>
-                            <td className="py-2.5 px-3 text-right text-gray-300 font-bold">{totalOpen}</td>
+                            <td className="py-2.5 px-3 text-right text-gray-300 font-bold">{currentOpenCount}</td>
                             <td className={`py-2.5 px-3 text-right font-bold ${
-                                totalFloating >= 0 ? 'text-blue-400' : 'text-orange-400'
+                                currentAbsUnrealized >= 0 ? 'text-blue-400' : 'text-orange-400'
                             }`}>
-                                {totalFloating >= 0 ? '+' : '-'}{prefix}{fmtAbs(totalFloating, market)}
+                                {currentAbsUnrealized >= 0 ? '+' : '-'}{prefix}{fmtAbs(currentAbsUnrealized, market)}
+                                <span className="block text-[9px] font-normal text-gray-600">current total</span>
                             </td>
                         </tr>
                     </tbody>
