@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useWatchlistStore } from '@/lib/watchlistStore';
 import { usePortfolioStore } from '@/lib/portfolioStore';
 import { useHydration } from '@/lib/useHydration';
-import { Market, MarketPnL, PortfolioSummary, ClosedPosition, MarketSnapshotData } from '@/types';
+import { Market, MarketPnL, PortfolioSummary, ClosedPosition, MarketSnapshotData, WatchlistItem } from '@/types';
 import {
     PieChart,
     Award,
@@ -484,11 +484,18 @@ export default function PortfolioDashboard() {
             </div>
 
             {/* Monthly Profit Section */}
-            {closedPositions.length > 0 && (
+            {(closedPositions.length > 0 || watchlistItems.length > 0) && (
                 <MonthlyProfitSection
                     closedPositions={closedPositions}
-                    hasUS={closedPositions.some((p) => p.market === 'US')}
-                    hasID={closedPositions.some((p) => p.market === 'ID')}
+                    watchlistItems={watchlistItems}
+                    hasUS={
+                        closedPositions.some((p) => p.market === 'US') ||
+                        watchlistItems.some((i) => i.market === 'US')
+                    }
+                    hasID={
+                        closedPositions.some((p) => p.market === 'ID') ||
+                        watchlistItems.some((i) => i.market === 'ID')
+                    }
                 />
             )}
 
@@ -536,72 +543,108 @@ export default function PortfolioDashboard() {
 // ============================================================
 
 interface MonthlyStats {
-    month: string;       // 'YYYY-MM'
-    label: string;       // 'Jan 2025'
-    pnl: number;
-    trades: number;
+    month: string;        // 'YYYY-MM'
+    label: string;        // 'Jan 2025'
+    realizedPnl: number;  // from closed positions (sold in this month)
+    floatingPnl: number;  // from open positions (bought in this month, still open)
+    trades: number;       // closed trades count
     wins: number;
     losses: number;
     winRate: number;
     avgPnlPercent: number;
+    openPositions: number; // open positions count bought this month
 }
 
-function buildMonthlyStats(positions: ClosedPosition[], market: Market): MonthlyStats[] {
-    const map = new Map<string, { pnl: number; trades: number; wins: number; losses: number; pnlPercentSum: number }>();
-
-    positions
+function buildCombinedMonthlyStats(
+    closedPositions: ClosedPosition[],
+    watchlistItems: WatchlistItem[],
+    market: Market
+): MonthlyStats[] {
+    // --- Realized: group by sellDate month ---
+    const realMap = new Map<string, { pnl: number; trades: number; wins: number; losses: number; pnlPercentSum: number }>();
+    closedPositions
         .filter((p) => p.market === market)
         .forEach((p) => {
-            const month = p.sellDate.slice(0, 7); // 'YYYY-MM'
-            const existing = map.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0, pnlPercentSum: 0 };
-            map.set(month, {
-                pnl: existing.pnl + p.pnl,
-                trades: existing.trades + 1,
-                wins: existing.wins + (p.pnlPercent >= 0 ? 1 : 0),
-                losses: existing.losses + (p.pnlPercent < 0 ? 1 : 0),
-                pnlPercentSum: existing.pnlPercentSum + p.pnlPercent,
+            const month = p.sellDate.slice(0, 7);
+            const e = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0, pnlPercentSum: 0 };
+            realMap.set(month, {
+                pnl: e.pnl + p.pnl,
+                trades: e.trades + 1,
+                wins: e.wins + (p.pnlPercent >= 0 ? 1 : 0),
+                losses: e.losses + (p.pnlPercent < 0 ? 1 : 0),
+                pnlPercentSum: e.pnlPercentSum + p.pnlPercent,
             });
         });
 
-    return Array.from(map.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([month, data]) => ({
+    // --- Floating: group by buyDate month ---
+    const floatMap = new Map<string, { pnl: number; count: number }>();
+    watchlistItems
+        .filter((i) => i.market === market)
+        .forEach((i) => {
+            const month = i.buyDate.slice(0, 7);
+            const e = floatMap.get(month) ?? { pnl: 0, count: 0 };
+            floatMap.set(month, { pnl: e.pnl + (i.pnl ?? 0), count: e.count + 1 });
+        });
+
+    // --- Union of all months ---
+    const allMonths = Array.from(new Set([...realMap.keys(), ...floatMap.keys()])).sort();
+
+    return allMonths.map((month) => {
+        const r = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0, pnlPercentSum: 0 };
+        const f = floatMap.get(month) ?? { pnl: 0, count: 0 };
+        return {
             month,
             label: new Date(month + '-02').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-            pnl: data.pnl,
-            trades: data.trades,
-            wins: data.wins,
-            losses: data.losses,
-            winRate: data.trades > 0 ? (data.wins / data.trades) * 100 : 0,
-            avgPnlPercent: data.trades > 0 ? data.pnlPercentSum / data.trades : 0,
-        }));
+            realizedPnl: r.pnl,
+            floatingPnl: f.pnl,
+            trades: r.trades,
+            wins: r.wins,
+            losses: r.losses,
+            winRate: r.trades > 0 ? (r.wins / r.trades) * 100 : 0,
+            avgPnlPercent: r.trades > 0 ? r.pnlPercentSum / r.trades : 0,
+            openPositions: f.count,
+        };
+    });
+}
+
+function fmtAbs(value: number, market: Market): string {
+    return Math.abs(value).toLocaleString(
+        market === 'ID' ? 'id-ID' : 'en-US',
+        { maximumFractionDigits: market === 'ID' ? 0 : 2 }
+    );
 }
 
 function MonthlyProfitSection({
     closedPositions,
+    watchlistItems,
     hasUS,
     hasID,
 }: {
     closedPositions: ClosedPosition[];
+    watchlistItems: WatchlistItem[];
     hasUS: boolean;
     hasID: boolean;
 }) {
     const [market, setMarket] = useState<Market>(hasUS ? 'US' : 'ID');
 
     const monthlyStats = useMemo(
-        () => buildMonthlyStats(closedPositions, market),
-        [closedPositions, market]
+        () => buildCombinedMonthlyStats(closedPositions, watchlistItems, market),
+        [closedPositions, watchlistItems, market]
     );
 
-    const totalPnL = monthlyStats.reduce((s, m) => s + m.pnl, 0);
-    const totalTrades = monthlyStats.reduce((s, m) => s + m.trades, 0);
-    const totalWins = monthlyStats.reduce((s, m) => s + m.wins, 0);
+    const totalRealized = monthlyStats.reduce((s, m) => s + m.realizedPnl, 0);
+    const totalFloating = monthlyStats.reduce((s, m) => s + m.floatingPnl, 0);
+    const totalTrades   = monthlyStats.reduce((s, m) => s + m.trades, 0);
+    const totalWins     = monthlyStats.reduce((s, m) => s + m.wins, 0);
+    const totalOpen     = monthlyStats.reduce((s, m) => s + m.openPositions, 0);
     const overallWinRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0;
-    const bestMonth = monthlyStats.length > 0
-        ? monthlyStats.reduce((best, m) => (m.pnl > best.pnl ? m : best))
+
+    const realizedMonths = monthlyStats.filter((m) => m.trades > 0);
+    const bestMonth = realizedMonths.length > 0
+        ? realizedMonths.reduce((best, m) => (m.realizedPnl > best.realizedPnl ? m : best))
         : null;
-    const worstMonth = monthlyStats.length > 0
-        ? monthlyStats.reduce((worst, m) => (m.pnl < worst.pnl ? m : worst))
+    const worstMonth = realizedMonths.length > 0
+        ? realizedMonths.reduce((worst, m) => (m.realizedPnl < worst.realizedPnl ? m : worst))
         : null;
 
     if (monthlyStats.length === 0) return null;
@@ -643,24 +686,25 @@ function MonthlyProfitSection({
             {/* Summary chips */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Total Realized</p>
-                    <p className={`text-base font-bold ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {totalPnL >= 0 ? '+' : ''}{prefix}{Math.abs(totalPnL).toLocaleString(market === 'ID' ? 'id-ID' : 'en-US', { maximumFractionDigits: market === 'ID' ? 0 : 2 })}
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Realized P&L</p>
+                    <p className={`text-base font-bold ${totalRealized >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {totalRealized >= 0 ? '+' : ''}{prefix}{fmtAbs(totalRealized, market)}
                     </p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{totalTrades} closed trade{totalTrades !== 1 ? 's' : ''}</p>
                 </div>
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Win Rate</p>
-                    <p className={`text-base font-bold ${overallWinRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
-                        {overallWinRate.toFixed(0)}%
-                        <span className="text-xs font-normal text-gray-500 ml-1">{totalWins}W/{totalTrades - totalWins}L</span>
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Floating P&L</p>
+                    <p className={`text-base font-bold ${totalFloating >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+                        {totalFloating >= 0 ? '+' : ''}{prefix}{fmtAbs(totalFloating, market)}
                     </p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{totalOpen} open position{totalOpen !== 1 ? 's' : ''}</p>
                 </div>
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
                     <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Best Month</p>
-                    {bestMonth && bestMonth.pnl > 0 ? (
+                    {bestMonth && bestMonth.realizedPnl > 0 ? (
                         <>
                             <p className="text-base font-bold text-green-400">
-                                +{prefix}{bestMonth.pnl.toLocaleString(market === 'ID' ? 'id-ID' : 'en-US', { maximumFractionDigits: market === 'ID' ? 0 : 2 })}
+                                +{prefix}{fmtAbs(bestMonth.realizedPnl, market)}
                             </p>
                             <p className="text-[10px] text-gray-500">{bestMonth.label}</p>
                         </>
@@ -670,10 +714,10 @@ function MonthlyProfitSection({
                 </div>
                 <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
                     <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Worst Month</p>
-                    {worstMonth && worstMonth.pnl < 0 ? (
+                    {worstMonth && worstMonth.realizedPnl < 0 ? (
                         <>
                             <p className="text-base font-bold text-red-400">
-                                {prefix}{worstMonth.pnl.toLocaleString(market === 'ID' ? 'id-ID' : 'en-US', { maximumFractionDigits: market === 'ID' ? 0 : 2 })}
+                                -{prefix}{fmtAbs(worstMonth.realizedPnl, market)}
                             </p>
                             <p className="text-[10px] text-gray-500">{worstMonth.label}</p>
                         </>
@@ -683,11 +727,31 @@ function MonthlyProfitSection({
                 </div>
             </div>
 
-            {/* Bar Chart */}
-            {monthlyStats.length >= 1 ? (
-                <div className="h-52 mb-5">
+            {/* Chart Legend */}
+            <div className="flex items-center gap-4 mb-3 text-xs text-gray-400">
+                <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-green-500" />
+                    Realized profit
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-red-500" />
+                    Realized loss
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-blue-400 opacity-70" />
+                    Floating profit
+                </span>
+                <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-orange-400 opacity-70" />
+                    Floating loss
+                </span>
+            </div>
+
+            {/* Grouped Bar Chart */}
+            {monthlyStats.length >= 1 && (
+                <div className="h-56 mb-5">
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={monthlyStats} barCategoryGap="30%">
+                        <BarChart data={monthlyStats} barCategoryGap="25%" barGap={2}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a38" vertical={false} />
                             <XAxis dataKey="label" stroke="#666" fontSize={11} tickLine={false} />
                             <YAxis
@@ -713,34 +777,39 @@ function MonthlyProfitSection({
                                 }}
                                 labelStyle={{ color: '#fff', fontWeight: 600, marginBottom: 4 }}
                                 formatter={(value: number, name: string) => {
-                                    if (name === 'pnl') {
-                                        const formatted = Math.abs(value).toLocaleString(
-                                            market === 'ID' ? 'id-ID' : 'en-US',
-                                            { maximumFractionDigits: market === 'ID' ? 0 : 2 }
-                                        );
-                                        return [
-                                            (value >= 0 ? '+' : '-') + prefix + formatted,
-                                            'Realized P&L',
-                                        ];
-                                    }
+                                    const sign = value >= 0 ? '+' : '-';
+                                    const formatted = sign + prefix + fmtAbs(value, market);
+                                    if (name === 'realizedPnl') return [formatted, 'Realized P&L'];
+                                    if (name === 'floatingPnl') return [formatted, 'Floating P&L'];
                                     return [value, name];
                                 }}
                                 cursor={{ fill: '#2a2a38' }}
                             />
                             <ReferenceLine y={0} stroke="#3a3a4d" strokeWidth={1} />
-                            <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+                            {/* Realized bar — colored by sign */}
+                            <Bar dataKey="realizedPnl" radius={[3, 3, 0, 0]} maxBarSize={40}>
                                 {monthlyStats.map((entry, index) => (
                                     <Cell
-                                        key={`cell-${index}`}
-                                        fill={entry.pnl >= 0 ? '#22c55e' : '#ef4444'}
-                                        fillOpacity={0.85}
+                                        key={`real-${index}`}
+                                        fill={entry.realizedPnl >= 0 ? '#22c55e' : '#ef4444'}
+                                        fillOpacity={entry.trades === 0 ? 0 : 0.9}
+                                    />
+                                ))}
+                            </Bar>
+                            {/* Floating bar — blue/orange by sign, slightly translucent */}
+                            <Bar dataKey="floatingPnl" radius={[3, 3, 0, 0]} maxBarSize={40}>
+                                {monthlyStats.map((entry, index) => (
+                                    <Cell
+                                        key={`float-${index}`}
+                                        fill={entry.floatingPnl >= 0 ? '#60a5fa' : '#fb923c'}
+                                        fillOpacity={entry.openPositions === 0 ? 0 : 0.75}
                                     />
                                 ))}
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
-            ) : null}
+            )}
 
             {/* Monthly Table */}
             <div className="overflow-x-auto">
@@ -748,34 +817,56 @@ function MonthlyProfitSection({
                     <thead>
                         <tr className="text-xs text-gray-500 border-b border-dark-600">
                             <th className="text-left py-2 px-3">Month</th>
-                            <th className="text-right py-2 px-3">Trades</th>
+                            <th className="text-right py-2 px-3">Closed</th>
                             <th className="text-right py-2 px-3">W / L</th>
-                            <th className="text-right py-2 px-3">Win Rate</th>
-                            <th className="text-right py-2 px-3">Avg P&L %</th>
-                            <th className="text-right py-2 px-3">Total P&L</th>
+                            <th className="text-right py-2 px-3">Win %</th>
+                            <th className="text-right py-2 px-3">Realized P&L</th>
+                            <th className="text-right py-2 px-3">Open</th>
+                            <th className="text-right py-2 px-3">Floating P&L</th>
                         </tr>
                     </thead>
                     <tbody>
                         {[...monthlyStats].reverse().map((row) => (
                             <tr key={row.month} className="border-b border-dark-700 hover:bg-dark-800 transition-colors">
                                 <td className="py-2.5 px-3 font-medium text-white">{row.label}</td>
-                                <td className="py-2.5 px-3 text-right text-gray-400">{row.trades}</td>
+                                <td className="py-2.5 px-3 text-right text-gray-400">
+                                    {row.trades > 0 ? row.trades : <span className="text-gray-600">—</span>}
+                                </td>
                                 <td className="py-2.5 px-3 text-right">
-                                    <span className="text-green-400">{row.wins}</span>
-                                    <span className="text-gray-600 mx-1">/</span>
-                                    <span className="text-red-400">{row.losses}</span>
+                                    {row.trades > 0 ? (
+                                        <>
+                                            <span className="text-green-400">{row.wins}</span>
+                                            <span className="text-gray-600 mx-1">/</span>
+                                            <span className="text-red-400">{row.losses}</span>
+                                        </>
+                                    ) : (
+                                        <span className="text-gray-600">—</span>
+                                    )}
                                 </td>
-                                <td className={`py-2.5 px-3 text-right font-medium ${row.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {row.winRate.toFixed(0)}%
+                                <td className={`py-2.5 px-3 text-right font-medium ${
+                                    row.trades === 0 ? 'text-gray-600' : row.winRate >= 50 ? 'text-green-400' : 'text-red-400'
+                                }`}>
+                                    {row.trades > 0 ? row.winRate.toFixed(0) + '%' : '—'}
                                 </td>
-                                <td className={`py-2.5 px-3 text-right font-medium ${row.avgPnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {row.avgPnlPercent >= 0 ? '+' : ''}{row.avgPnlPercent.toFixed(2)}%
+                                <td className={`py-2.5 px-3 text-right font-bold ${
+                                    row.trades === 0 ? 'text-gray-600' : row.realizedPnl >= 0 ? 'text-green-400' : 'text-red-400'
+                                }`}>
+                                    {row.trades > 0 ? (
+                                        <>{row.realizedPnl >= 0 ? '+' : '-'}{prefix}{fmtAbs(row.realizedPnl, market)}</>
+                                    ) : (
+                                        <span className="text-gray-600 font-normal">—</span>
+                                    )}
                                 </td>
-                                <td className={`py-2.5 px-3 text-right font-bold ${row.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {row.pnl >= 0 ? '+' : ''}
-                                    {prefix}{Math.abs(row.pnl).toLocaleString(
-                                        market === 'ID' ? 'id-ID' : 'en-US',
-                                        { maximumFractionDigits: market === 'ID' ? 0 : 2 }
+                                <td className="py-2.5 px-3 text-right text-gray-400">
+                                    {row.openPositions > 0 ? row.openPositions : <span className="text-gray-600">—</span>}
+                                </td>
+                                <td className={`py-2.5 px-3 text-right font-semibold ${
+                                    row.openPositions === 0 ? 'text-gray-600' : row.floatingPnl >= 0 ? 'text-blue-400' : 'text-orange-400'
+                                }`}>
+                                    {row.openPositions > 0 ? (
+                                        <>{row.floatingPnl >= 0 ? '+' : '-'}{prefix}{fmtAbs(row.floatingPnl, market)}</>
+                                    ) : (
+                                        <span className="text-gray-600 font-normal">—</span>
                                     )}
                                 </td>
                             </tr>
@@ -789,16 +880,21 @@ function MonthlyProfitSection({
                                 <span className="text-gray-600 mx-1">/</span>
                                 <span className="text-red-400 font-bold">{totalTrades - totalWins}</span>
                             </td>
-                            <td className={`py-2.5 px-3 text-right font-bold ${overallWinRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
-                                {overallWinRate.toFixed(0)}%
+                            <td className={`py-2.5 px-3 text-right font-bold ${
+                                overallWinRate >= 50 ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                                {totalTrades > 0 ? overallWinRate.toFixed(0) + '%' : '—'}
                             </td>
-                            <td className="py-2.5 px-3 text-right text-gray-500">—</td>
-                            <td className={`py-2.5 px-3 text-right font-bold ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {totalPnL >= 0 ? '+' : ''}
-                                {prefix}{Math.abs(totalPnL).toLocaleString(
-                                    market === 'ID' ? 'id-ID' : 'en-US',
-                                    { maximumFractionDigits: market === 'ID' ? 0 : 2 }
-                                )}
+                            <td className={`py-2.5 px-3 text-right font-bold ${
+                                totalRealized >= 0 ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                                {totalRealized >= 0 ? '+' : '-'}{prefix}{fmtAbs(totalRealized, market)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-gray-300 font-bold">{totalOpen}</td>
+                            <td className={`py-2.5 px-3 text-right font-bold ${
+                                totalFloating >= 0 ? 'text-blue-400' : 'text-orange-400'
+                            }`}>
+                                {totalFloating >= 0 ? '+' : '-'}{prefix}{fmtAbs(totalFloating, market)}
                             </td>
                         </tr>
                     </tbody>
