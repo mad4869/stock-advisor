@@ -20,6 +20,10 @@ import {
 import {
     AreaChart,
     Area,
+    BarChart,
+    Bar,
+    Cell,
+    ReferenceLine,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -479,6 +483,15 @@ export default function PortfolioDashboard() {
                 )}
             </div>
 
+            {/* Monthly Profit Section */}
+            {closedPositions.length > 0 && (
+                <MonthlyProfitSection
+                    closedPositions={closedPositions}
+                    hasUS={closedPositions.some((p) => p.market === 'US')}
+                    hasID={closedPositions.some((p) => p.market === 'ID')}
+                />
+            )}
+
             {/* Closed Positions */}
             {closedPositions.length > 0 && (
                 <div className="card">
@@ -514,6 +527,283 @@ export default function PortfolioDashboard() {
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+// ============================================================
+// Monthly Profit Section
+// ============================================================
+
+interface MonthlyStats {
+    month: string;       // 'YYYY-MM'
+    label: string;       // 'Jan 2025'
+    pnl: number;
+    trades: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    avgPnlPercent: number;
+}
+
+function buildMonthlyStats(positions: ClosedPosition[], market: Market): MonthlyStats[] {
+    const map = new Map<string, { pnl: number; trades: number; wins: number; losses: number; pnlPercentSum: number }>();
+
+    positions
+        .filter((p) => p.market === market)
+        .forEach((p) => {
+            const month = p.sellDate.slice(0, 7); // 'YYYY-MM'
+            const existing = map.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0, pnlPercentSum: 0 };
+            map.set(month, {
+                pnl: existing.pnl + p.pnl,
+                trades: existing.trades + 1,
+                wins: existing.wins + (p.pnlPercent >= 0 ? 1 : 0),
+                losses: existing.losses + (p.pnlPercent < 0 ? 1 : 0),
+                pnlPercentSum: existing.pnlPercentSum + p.pnlPercent,
+            });
+        });
+
+    return Array.from(map.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, data]) => ({
+            month,
+            label: new Date(month + '-02').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+            pnl: data.pnl,
+            trades: data.trades,
+            wins: data.wins,
+            losses: data.losses,
+            winRate: data.trades > 0 ? (data.wins / data.trades) * 100 : 0,
+            avgPnlPercent: data.trades > 0 ? data.pnlPercentSum / data.trades : 0,
+        }));
+}
+
+function MonthlyProfitSection({
+    closedPositions,
+    hasUS,
+    hasID,
+}: {
+    closedPositions: ClosedPosition[];
+    hasUS: boolean;
+    hasID: boolean;
+}) {
+    const [market, setMarket] = useState<Market>(hasUS ? 'US' : 'ID');
+
+    const monthlyStats = useMemo(
+        () => buildMonthlyStats(closedPositions, market),
+        [closedPositions, market]
+    );
+
+    const totalPnL = monthlyStats.reduce((s, m) => s + m.pnl, 0);
+    const totalTrades = monthlyStats.reduce((s, m) => s + m.trades, 0);
+    const totalWins = monthlyStats.reduce((s, m) => s + m.wins, 0);
+    const overallWinRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0;
+    const bestMonth = monthlyStats.length > 0
+        ? monthlyStats.reduce((best, m) => (m.pnl > best.pnl ? m : best))
+        : null;
+    const worstMonth = monthlyStats.length > 0
+        ? monthlyStats.reduce((worst, m) => (m.pnl < worst.pnl ? m : worst))
+        : null;
+
+    if (monthlyStats.length === 0) return null;
+
+    const prefix = market === 'ID' ? 'Rp' : '$';
+
+    return (
+        <div className="card">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-emerald-400" />
+                    <h3 className="text-lg font-bold text-white">Monthly Profit Breakdown</h3>
+                </div>
+                {hasUS && hasID && (
+                    <div className="flex items-center bg-dark-800 rounded-lg p-1 border border-dark-600">
+                        <button
+                            onClick={() => setMarket('US')}
+                            className={
+                                'px-3 py-1 rounded-md text-xs font-semibold transition-all ' +
+                                (market === 'US' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white')
+                            }
+                        >
+                            🇺🇸 USD
+                        </button>
+                        <button
+                            onClick={() => setMarket('ID')}
+                            className={
+                                'px-3 py-1 rounded-md text-xs font-semibold transition-all ' +
+                                (market === 'ID' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white')
+                            }
+                        >
+                            🇮🇩 IDR
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Summary chips */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Total Realized</p>
+                    <p className={`text-base font-bold ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {totalPnL >= 0 ? '+' : ''}{prefix}{Math.abs(totalPnL).toLocaleString(market === 'ID' ? 'id-ID' : 'en-US', { maximumFractionDigits: market === 'ID' ? 0 : 2 })}
+                    </p>
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Win Rate</p>
+                    <p className={`text-base font-bold ${overallWinRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                        {overallWinRate.toFixed(0)}%
+                        <span className="text-xs font-normal text-gray-500 ml-1">{totalWins}W/{totalTrades - totalWins}L</span>
+                    </p>
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Best Month</p>
+                    {bestMonth && bestMonth.pnl > 0 ? (
+                        <>
+                            <p className="text-base font-bold text-green-400">
+                                +{prefix}{bestMonth.pnl.toLocaleString(market === 'ID' ? 'id-ID' : 'en-US', { maximumFractionDigits: market === 'ID' ? 0 : 2 })}
+                            </p>
+                            <p className="text-[10px] text-gray-500">{bestMonth.label}</p>
+                        </>
+                    ) : (
+                        <p className="text-base font-bold text-gray-500">—</p>
+                    )}
+                </div>
+                <div className="bg-dark-800 rounded-xl p-3 border border-dark-600">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Worst Month</p>
+                    {worstMonth && worstMonth.pnl < 0 ? (
+                        <>
+                            <p className="text-base font-bold text-red-400">
+                                {prefix}{worstMonth.pnl.toLocaleString(market === 'ID' ? 'id-ID' : 'en-US', { maximumFractionDigits: market === 'ID' ? 0 : 2 })}
+                            </p>
+                            <p className="text-[10px] text-gray-500">{worstMonth.label}</p>
+                        </>
+                    ) : (
+                        <p className="text-base font-bold text-gray-500">—</p>
+                    )}
+                </div>
+            </div>
+
+            {/* Bar Chart */}
+            {monthlyStats.length >= 1 ? (
+                <div className="h-52 mb-5">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyStats} barCategoryGap="30%">
+                            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a38" vertical={false} />
+                            <XAxis dataKey="label" stroke="#666" fontSize={11} tickLine={false} />
+                            <YAxis
+                                stroke="#666"
+                                fontSize={11}
+                                tickLine={false}
+                                tickFormatter={(v: number) => {
+                                    if (market === 'ID') {
+                                        if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
+                                        if (Math.abs(v) >= 1_000) return (v / 1_000).toFixed(0) + 'K';
+                                        return v.toString();
+                                    }
+                                    if (Math.abs(v) >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K';
+                                    return '$' + v.toFixed(0);
+                                }}
+                            />
+                            <Tooltip
+                                contentStyle={{
+                                    backgroundColor: '#1e1e28',
+                                    border: '1px solid #3a3a4d',
+                                    borderRadius: '12px',
+                                    fontSize: '12px',
+                                }}
+                                labelStyle={{ color: '#fff', fontWeight: 600, marginBottom: 4 }}
+                                formatter={(value: number, name: string) => {
+                                    if (name === 'pnl') {
+                                        const formatted = Math.abs(value).toLocaleString(
+                                            market === 'ID' ? 'id-ID' : 'en-US',
+                                            { maximumFractionDigits: market === 'ID' ? 0 : 2 }
+                                        );
+                                        return [
+                                            (value >= 0 ? '+' : '-') + prefix + formatted,
+                                            'Realized P&L',
+                                        ];
+                                    }
+                                    return [value, name];
+                                }}
+                                cursor={{ fill: '#2a2a38' }}
+                            />
+                            <ReferenceLine y={0} stroke="#3a3a4d" strokeWidth={1} />
+                            <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+                                {monthlyStats.map((entry, index) => (
+                                    <Cell
+                                        key={`cell-${index}`}
+                                        fill={entry.pnl >= 0 ? '#22c55e' : '#ef4444'}
+                                        fillOpacity={0.85}
+                                    />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            ) : null}
+
+            {/* Monthly Table */}
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className="text-xs text-gray-500 border-b border-dark-600">
+                            <th className="text-left py-2 px-3">Month</th>
+                            <th className="text-right py-2 px-3">Trades</th>
+                            <th className="text-right py-2 px-3">W / L</th>
+                            <th className="text-right py-2 px-3">Win Rate</th>
+                            <th className="text-right py-2 px-3">Avg P&L %</th>
+                            <th className="text-right py-2 px-3">Total P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {[...monthlyStats].reverse().map((row) => (
+                            <tr key={row.month} className="border-b border-dark-700 hover:bg-dark-800 transition-colors">
+                                <td className="py-2.5 px-3 font-medium text-white">{row.label}</td>
+                                <td className="py-2.5 px-3 text-right text-gray-400">{row.trades}</td>
+                                <td className="py-2.5 px-3 text-right">
+                                    <span className="text-green-400">{row.wins}</span>
+                                    <span className="text-gray-600 mx-1">/</span>
+                                    <span className="text-red-400">{row.losses}</span>
+                                </td>
+                                <td className={`py-2.5 px-3 text-right font-medium ${row.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {row.winRate.toFixed(0)}%
+                                </td>
+                                <td className={`py-2.5 px-3 text-right font-medium ${row.avgPnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {row.avgPnlPercent >= 0 ? '+' : ''}{row.avgPnlPercent.toFixed(2)}%
+                                </td>
+                                <td className={`py-2.5 px-3 text-right font-bold ${row.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {row.pnl >= 0 ? '+' : ''}
+                                    {prefix}{Math.abs(row.pnl).toLocaleString(
+                                        market === 'ID' ? 'id-ID' : 'en-US',
+                                        { maximumFractionDigits: market === 'ID' ? 0 : 2 }
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                        {/* Totals row */}
+                        <tr className="border-t border-dark-500 bg-dark-800">
+                            <td className="py-2.5 px-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Total</td>
+                            <td className="py-2.5 px-3 text-right text-gray-300 font-bold">{totalTrades}</td>
+                            <td className="py-2.5 px-3 text-right">
+                                <span className="text-green-400 font-bold">{totalWins}</span>
+                                <span className="text-gray-600 mx-1">/</span>
+                                <span className="text-red-400 font-bold">{totalTrades - totalWins}</span>
+                            </td>
+                            <td className={`py-2.5 px-3 text-right font-bold ${overallWinRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                                {overallWinRate.toFixed(0)}%
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-gray-500">—</td>
+                            <td className={`py-2.5 px-3 text-right font-bold ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {totalPnL >= 0 ? '+' : ''}
+                                {prefix}{Math.abs(totalPnL).toLocaleString(
+                                    market === 'ID' ? 'id-ID' : 'en-US',
+                                    { maximumFractionDigits: market === 'ID' ? 0 : 2 }
+                                )}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
