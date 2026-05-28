@@ -63,59 +63,66 @@ export async function searchStocks2(
   const q = query.trim();
   if (!q) return [];
 
-  // Re-use searchCache from cache.ts if we want, or just fetch directly.
-  // We'll just fetch directly for simplicity, but let's use the same filtering.
+  let rawQuotes: any[] = [];
+
   try {
     const res = await retryYahooFinanceCall(() => yahooFinance.search(q));
-    const quotes = res.quotes;
-    
-    if (!quotes || !Array.isArray(quotes)) return [];
-
-    const mapped = quotes
-      .filter((q: any) => {
-        // Only equities or ETFs
-        if (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF') return false;
-
-        const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
-        const isUS =
-          !q.symbol?.includes('.') ||
-          ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ', 'BATS', 'PCX'].includes(q.exchange);
-
-        // Only include US and IDX stocks since that's what the app supports
-        return isIDX || isUS;
-      })
-      .map((q: any) => {
-        const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
-        return {
-          symbol: q.symbol?.replace('.JK', '') || q.symbol,
-          name: q.longname || q.shortname || q.symbol,
-          market: isIDX ? ('ID' as Market) : ('US' as Market),
-        };
-      });
-
-    // De-dupe by (market, symbol) to avoid collisions like US:BULL vs ID:BULL
-    const seen = new Set<string>();
-    const unique = mapped.filter((r) => {
-      const key = `${r.market}:${r.symbol}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    // If a market is selected, prioritize it *before* slicing.
-    unique.sort((a, b) => {
-      if (market) {
-        if (a.market === market && b.market !== market) return -1;
-        if (a.market !== market && b.market === market) return 1;
-      }
-      return 0;
-    });
-
-    return unique.slice(0, 10);
-  } catch (err) {
-    console.error('[YF2] Search error:', err);
-    return [];
+    rawQuotes = res.quotes || [];
+  } catch (err: any) {
+    // yahoo-finance2 throws FailedYahooValidationError when Yahoo changes their schema.
+    // The raw data is still present in err.result.quotes — use it if available.
+    if (err?.result?.quotes && Array.isArray(err.result.quotes)) {
+      console.warn('[YF2] Search schema validation error (using raw results):', err.message);
+      rawQuotes = err.result.quotes;
+    } else {
+      console.error('[YF2] Search error:', err);
+      return [];
+    }
   }
+
+  if (!rawQuotes || !Array.isArray(rawQuotes)) return [];
+
+  const mapped = rawQuotes
+    .filter((q: any) => {
+      // Only equities or ETFs
+      if (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF') return false;
+
+      const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
+      const isUS =
+        !q.symbol?.includes('.') ||
+        ['NYQ', 'NMS', 'NGM', 'NYSE', 'NASDAQ', 'BATS', 'PCX'].includes(q.exchange);
+
+      // Only include US and IDX stocks since that's what the app supports
+      return isIDX || isUS;
+    })
+    .map((q: any) => {
+      const isIDX = q.symbol?.endsWith('.JK') || q.exchange === 'JKT';
+      return {
+        symbol: q.symbol?.replace('.JK', '') || q.symbol,
+        name: q.longname || q.shortname || q.symbol,
+        market: isIDX ? ('ID' as Market) : ('US' as Market),
+      };
+    });
+
+  // De-dupe by (market, symbol) to avoid collisions like US:BULL vs ID:BULL
+  const seen = new Set<string>();
+  const unique = mapped.filter((r) => {
+    const key = `${r.market}:${r.symbol}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // If a market is selected, prioritize it *before* slicing.
+  unique.sort((a, b) => {
+    if (market) {
+      if (a.market === market && b.market !== market) return -1;
+      if (a.market !== market && b.market === market) return 1;
+    }
+    return 0;
+  });
+
+  return unique.slice(0, 10);
 }
 
 
