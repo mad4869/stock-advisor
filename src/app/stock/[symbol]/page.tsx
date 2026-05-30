@@ -175,7 +175,7 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                   />
                 </svg>
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl font-bold text-white">
-                  {screener.taScore}
+                  {Math.round(screener.taScore)}
                 </div>
               </div>
               <div className="mt-6 flex flex-wrap gap-2 justify-center">
