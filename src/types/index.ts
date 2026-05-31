@@ -222,3 +222,5 @@ export interface SwingScreenerResult {
   error?: string;
   redFlags?: any[];
 }
+
+export type { PriceRecommendation } from '@/lib/priceRecommendation';

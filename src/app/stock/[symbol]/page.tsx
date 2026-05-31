@@ -4,13 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, TrendingUp, TrendingDown, Info, Shield, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { SwingScreenerResult } from '@/types';
-import { StockQuote } from '@/types';
+import { SwingScreenerResult, StockQuote, PriceRecommendation } from '@/types';
+import PriceRecommendationCard from '@/components/PriceRecommendationCard';
 
 interface DetailData {
   screener: SwingScreenerResult | null;
   quote: StockQuote | null;
   profile: any | null;
+  priceRecommendation: PriceRecommendation | null;
   errors: {
     screener: string | null;
     quote: string | null;
@@ -62,7 +63,7 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
     );
   }
 
-  const { screener, quote, profile } = data;
+  const { screener, quote, profile, priceRecommendation } = data;
   const isUp = quote?.change && quote.change >= 0;
 
   return (
@@ -191,6 +192,16 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
               </div>
             </div>
           </div>
+
+          {/* Price Recommendation */}
+          {priceRecommendation && quote && (
+            <PriceRecommendationCard
+              recommendation={priceRecommendation}
+              currentPrice={quote.price}
+              currency={quote.currency}
+              market={market as 'US' | 'ID'}
+            />
+          )}
 
           {/* Bottom Row: Detailed Indicators */}
           {screener.taData && (
