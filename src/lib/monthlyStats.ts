@@ -1,4 +1,4 @@
-import { ClosedPosition, PortfolioSnapshot, WatchlistItem, Market } from '@/types';
+import { ClosedPosition, PortfolioSnapshot, PositionSnapshot, WatchlistItem, Market } from '@/types';
 
 export interface MonthlyStats {
     month: string;            // 'YYYY-MM'
@@ -14,11 +14,29 @@ export interface MonthlyStats {
 }
 
 /**
+ * Get the YYYY-MM string for the month before `month`.
+ * e.g. '2024-06' → '2024-05', '2024-01' → '2023-12'
+ * Uses pure arithmetic to avoid timezone issues with Date.
+ */
+function prevMonth(month: string): string {
+    let [y, m] = month.split('-').map(Number);
+    m -= 1;
+    if (m < 1) { m = 12; y -= 1; }
+    return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+/**
  * Build monthly stats with:
  * - Realized P&L: grouped by sellDate month
- * - Unrealized P&L DELTA: how much total unrealized changed DURING each month.
- *   Computed by: (end-of-month snapshot unrealized) - (end-of-previous-month snapshot unrealized).
- *   Each month starts from zero. For the current month, live watchlist data is used.
+ * - Unrealized P&L DELTA: how much total unrealized changed DURING each month,
+ *   **adjusted for positions that were closed** (their prior-month unrealized is
+ *   removed from the baseline so that closing a position doesn't create a fake
+ *   negative delta).
+ *
+ * Formula per month M:
+ *   closedAdj = sum of (end-of-(M-1) unrealized) for each position closed in M
+ *   adjustedPrev = prevMonthTotalUnrealized - closedAdj
+ *   delta = endOfMonthUnrealized - adjustedPrev
  */
 export function buildCombinedMonthlyStats(
     closedPositions: ClosedPosition[],
@@ -30,10 +48,12 @@ export function buildCombinedMonthlyStats(
 ): MonthlyStats[] {
     // --- Realized: group by sellDate month ---
     const realMap = new Map<string, { pnl: number; trades: number; wins: number; losses: number }>();
+    const closedByMonth = new Map<string, ClosedPosition[]>();
     closedPositions
         .filter((p) => p.market === market)
         .forEach((p) => {
             const month = p.sellDate.slice(0, 7);
+            // Realized aggregation
             const e = realMap.get(month) ?? { pnl: 0, trades: 0, wins: 0, losses: 0 };
             realMap.set(month, {
                 pnl: e.pnl + p.pnl,
@@ -41,16 +61,27 @@ export function buildCombinedMonthlyStats(
                 wins: e.wins + (p.pnlPercent >= 0 ? 1 : 0),
                 losses: e.losses + (p.pnlPercent < 0 ? 1 : 0),
             });
+            // Group closed positions by month for adjustment later
+            const list = closedByMonth.get(month) ?? [];
+            list.push(p);
+            closedByMonth.set(month, list);
         });
 
-    // --- Unrealized snapshots: end-of-month total unrealized and position count ---
-    // Take the LAST snapshot of each month for this market (snapshots are chronological)
+    // --- Snapshot data ---
+    // End-of-month total unrealized and position count
     const endOfMonthUnrealized = new Map<string, { pnl: number; count: number }>();
+    // Last snapshot's per-position data for each month (for closed-position adjustment)
+    const lastSnapshotPositions = new Map<string, PositionSnapshot[]>();
+
     snapshots.forEach((s) => {
         const month = s.date.slice(0, 7);
         const mktData = market === 'US' ? s.us : s.id;
         if (!mktData || typeof mktData.totalPnL !== 'number') return;
+        // Overwrite: snapshots are chronological, so last one in each month wins
         endOfMonthUnrealized.set(month, { pnl: mktData.totalPnL, count: mktData.positionCount || 0 });
+        // Store per-position data for this market
+        const mktPositions = (s.positions || []).filter((p) => p.market === market);
+        lastSnapshotPositions.set(month, mktPositions);
     });
 
     // For the current month, use live watchlist data
@@ -65,15 +96,51 @@ export function buildCombinedMonthlyStats(
         endOfMonthUnrealized.set(currentMonth, { pnl: liveUnrealized, count: marketItems.length });
     }
 
-    // Sort snapshot months and compute month-over-month deltas
+    // --- Compute adjustment for closed positions ---
+    // For month M, find positions closed in M and look up their unrealized at end of M-1.
+    // This amount is subtracted from the prev-month baseline so that closing a position
+    // doesn't create a fake negative delta.
+    function getClosedPositionAdjustment(month: string): number {
+        const closedInMonth = closedByMonth.get(month);
+        if (!closedInMonth || closedInMonth.length === 0) return 0;
+
+        const prev = prevMonth(month);
+        const prevPositions = lastSnapshotPositions.get(prev);
+        if (!prevPositions || prevPositions.length === 0) return 0;
+
+        let adjustment = 0;
+        // Track which snapshot positions have been matched to avoid double-matching
+        const usedIndices = new Set<number>();
+
+        for (const closed of closedInMonth) {
+            // Find the best match in previous month's snapshot by symbol + buyPrice
+            const matchIdx = prevPositions.findIndex((p, idx) =>
+                !usedIndices.has(idx) &&
+                p.symbol === closed.symbol &&
+                Math.abs(p.buyPrice - closed.buyPrice) < 0.01
+            );
+            if (matchIdx >= 0) {
+                adjustment += prevPositions[matchIdx].pnl;
+                usedIndices.add(matchIdx);
+            }
+        }
+        return adjustment;
+    }
+
+    // Sort snapshot months and compute adjusted month-over-month deltas
     const snapshotMonthsSorted = Array.from(endOfMonthUnrealized.keys()).sort();
     const unrealizedDeltaMap = new Map<string, { delta: number; endCount: number }>();
     for (let i = 0; i < snapshotMonthsSorted.length; i++) {
         const month = snapshotMonthsSorted[i];
         const endPnl = endOfMonthUnrealized.get(month)!.pnl;
         const endCount = endOfMonthUnrealized.get(month)!.count;
-        const prevPnl = i > 0 ? (endOfMonthUnrealized.get(snapshotMonthsSorted[i - 1])?.pnl ?? 0) : 0;
-        unrealizedDeltaMap.set(month, { delta: endPnl - prevPnl, endCount });
+        const rawPrevPnl = i > 0 ? (endOfMonthUnrealized.get(snapshotMonthsSorted[i - 1])?.pnl ?? 0) : 0;
+
+        // Subtract the prior-month unrealized of positions closed this month
+        const closedAdj = getClosedPositionAdjustment(month);
+        const adjustedPrevPnl = rawPrevPnl - closedAdj;
+
+        unrealizedDeltaMap.set(month, { delta: endPnl - adjustedPrevPnl, endCount });
     }
 
     // --- Union of all months ---
