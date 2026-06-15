@@ -8,7 +8,7 @@ import { Market } from '@/types';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE'];
+const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE', 'MA_TREND'];
 const MAX_LIMIT = 50;
 
 export async function GET(request: NextRequest) {

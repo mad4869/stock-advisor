@@ -5,7 +5,7 @@ import { historyCache, singleScreenerCache, CACHE_TTL } from './cache';
 import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -118,6 +118,7 @@ async function runScreenerForSymbolRaw(
       VOLUME_CLIMAX: 60,
       OVERSOLD: 40,
       SHORT_SQUEEZE: 60,
+      MA_TREND: 60,
     };
     const accThreshold = accThresholdMap[preset];
     const accumulation = computeAccumulation(history, accThreshold);
@@ -301,6 +302,20 @@ async function runScreenerForSymbolRaw(
       const stochReq = ta.stochRecovery;
       taPass = taPass && volReq && emaReq && stochReq;
       if (taPass) signals.push('Short Squeeze Setup');
+    }
+    else if (preset === 'MA_TREND') {
+      // Accumulation (≥3/5) + price above all 6 MAs (EMA 20/50/200 + SMA 20/50/200)
+      // Slightly relaxed TA score (≥50) since the 6-MA alignment is already a strong structural filter
+      taPass = totalTaScore >= 50;
+      const aboveEma20 = ta.ema20 != null ? price > ta.ema20 : false;
+      const aboveEma50 = ta.ema50 != null ? price > ta.ema50 : false;
+      const aboveEma200 = ta.ema200 != null ? price > ta.ema200 : false;
+      const aboveSma20 = ta.sma20 != null ? price > ta.sma20 : false;
+      const aboveSma50 = ta.sma50 != null ? price > ta.sma50 : false;
+      const aboveSma200 = ta.sma200 != null ? price > ta.sma200 : false;
+      const allMaAbove = aboveEma20 && aboveEma50 && aboveEma200 && aboveSma20 && aboveSma50 && aboveSma200;
+      taPass = taPass && allMaAbove;
+      if (taPass) signals.push('Above All MAs (EMA & SMA)');
     }
 
     if (taPass) {
