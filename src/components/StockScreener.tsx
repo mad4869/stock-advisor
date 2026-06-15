@@ -276,7 +276,7 @@ export default function StockScreener() {
                               style={{ width: `${Math.min(100, Math.max(0, result.taScore))}%` }}
                             />
                           </div>
-                          <span className="text-gray-300 font-medium">{result.taScore}</span>
+                          <span className="text-gray-300 font-medium">{Math.round(result.taScore)}</span>
                         </div>
                       </td>
                       <td className="py-3 px-4">
@@ -349,6 +349,53 @@ export default function StockScreener() {
                                     <div>Pivot S1: <span className="font-semibold text-white">{result.taData.pivotS1 ? `${marketTab === 'ID' ? 'Rp' : '$'}${result.taData.pivotS1.toLocaleString(marketTab === 'ID' ? 'id-ID' : 'en-US')}` : '—'}</span></div>
                                     <div>Pivot R1: <span className="font-semibold text-white">{result.taData.pivotR1 ? `${marketTab === 'ID' ? 'Rp' : '$'}${result.taData.pivotR1.toLocaleString(marketTab === 'ID' ? 'id-ID' : 'en-US')}` : '—'}</span></div>
                                     <div className="col-span-2 mt-1">Supertrend: <span className={result.taData.supertrendBullish ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>{result.taData.supertrendBullish ? 'BULLISH' : 'BEARISH'}</span></div>
+
+                                    {/* MA Alignment */}
+                                    <div className="col-span-2 mt-2 pt-2 border-t border-dark-700">
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">MA Alignment (Price vs MA)</p>
+                                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+                                        {([
+                                          { label: 'EMA 20', val: result.taData.ema20 },
+                                          { label: 'SMA 20', val: result.taData.sma20 },
+                                          { label: 'EMA 50', val: result.taData.ema50 },
+                                          { label: 'SMA 50', val: result.taData.sma50 },
+                                          { label: 'EMA 200', val: result.taData.ema200 },
+                                          { label: 'SMA 200', val: result.taData.sma200 },
+                                        ] as { label: string; val: number | null }[]).map(({ label, val }) => {
+                                          const above = val != null && result.taData.close > val;
+                                          return (
+                                            <div key={label} className="flex justify-between items-center py-0.5">
+                                              <span className="text-gray-400">{label}</span>
+                                              {val != null ? (
+                                                <span className={above ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                                                  {above ? '▲ Above' : '▼ Below'}
+                                                </span>
+                                              ) : (
+                                                <span className="text-gray-600">N/A</span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      {/* Summary badges */}
+                                      <div className="flex gap-2 mt-2">
+                                        {(() => {
+                                          const p = result.taData.close;
+                                          const emaAll = [result.taData.ema20, result.taData.ema50, result.taData.ema200].every(v => v != null && p > v);
+                                          const smaAll = [result.taData.sma20, result.taData.sma50, result.taData.sma200].every(v => v != null && p > v);
+                                          return (
+                                            <>
+                                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${emaAll ? 'bg-green-500/20 text-green-400' : 'bg-dark-600 text-gray-500'}`}>
+                                                {emaAll ? '✓ All EMAs' : '✗ EMAs'}
+                                              </span>
+                                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${smaAll ? 'bg-green-500/20 text-green-400' : 'bg-dark-600 text-gray-500'}`}>
+                                                {smaAll ? '✓ All SMAs' : '✗ SMAs'}
+                                              </span>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+                                    </div>
                                     
                                     {/* Crossover Recency */}
                                     {(result.taData.emaCrossoverRecency !== null || result.taData.macdCrossoverRecency !== null || result.taData.priceCrossoverRecency !== null) && (

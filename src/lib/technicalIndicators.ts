@@ -24,6 +24,9 @@ export interface TAData {
   ema20: number | null;
   ema50: number | null;
   ema200: number | null;
+  sma20: number | null;
+  sma50: number | null;
+  sma200: number | null;
   macdHistogram: number | null;
   macdIncreasing: boolean;
   adx: number | null;
@@ -89,6 +92,11 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
   const ema20 = getLast(EMA.calculate({ period: 20, values: closes }));
   const ema50 = getLast(EMA.calculate({ period: 50, values: closes }));
   const ema200 = getLast(EMA.calculate({ period: 200, values: closes }));
+
+  // SMA
+  const sma20 = getLast(SMA.calculate({ period: 20, values: closes }));
+  const sma50 = getLast(SMA.calculate({ period: 50, values: closes }));
+  const sma200 = getLast(SMA.calculate({ period: 200, values: closes }));
 
   // MACD
   const macdData = MACD.calculate({
@@ -283,6 +291,9 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     ema20,
     ema50,
     ema200,
+    sma20,
+    sma50,
+    sma200,
     macdHistogram,
     macdIncreasing,
     adx,

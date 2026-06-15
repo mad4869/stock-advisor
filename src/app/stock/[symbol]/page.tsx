@@ -205,28 +205,121 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
 
           {/* Bottom Row: Detailed Indicators */}
           {screener.taData && (
-            <div className="card">
-              <h3 className="text-lg font-bold text-white mb-6">Technical Indicators Breakdown</h3>
-              
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <MetricBox label="RSI (14)" value={screener.taData.rsi?.toFixed(2)} subtext={getRSILabel(screener.taData.rsi)} />
-                <MetricBox label="MACD Hist" value={screener.taData.macdHistogram?.toFixed(3)} subtext={getMACDLabel(screener.taData.macdHistogram)} />
-                <MetricBox label="ADX (14)" value={screener.taData.adx?.toFixed(2)} subtext={getADXLabel(screener.taData.adx)} />
-                <MetricBox label="CCI (20)" value={screener.taData.cci?.toFixed(2)} subtext={getCCILabel(screener.taData.cci)} />
+            <div className="space-y-6">
+              {/* MA Alignment */}
+              <div className="card">
+                <h3 className="text-lg font-bold text-white mb-1">Moving Average Alignment</h3>
+                <p className="text-xs text-gray-500 mb-5">Price vs. each moving average — green means price is above, red means below.</p>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* EMA block */}
+                  <div className="bg-dark-800 rounded-xl border border-dark-600 p-4">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Exponential MA (EMA)</p>
+                    <div className="space-y-2">
+                      {([
+                        { label: 'EMA 20', value: screener.taData.ema20 },
+                        { label: 'EMA 50', value: screener.taData.ema50 },
+                        { label: 'EMA 200', value: screener.taData.ema200 },
+                      ] as { label: string; value: number | null }[]).map(({ label, value }) => {
+                        const above = value != null && screener.taData.close > value;
+                        const available = value != null;
+                        return (
+                          <div key={label} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">{available ? value.toFixed(2) : '—'}</span>
+                              {available ? (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${above ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                  {above ? '▲ Above' : '▼ Below'}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-600">N/A</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Summary badge */}
+                    {(() => {
+                      const price = screener.taData.close;
+                      const allAbove = [screener.taData.ema20, screener.taData.ema50, screener.taData.ema200].every(v => v != null && price > v);
+                      const noneNull = [screener.taData.ema20, screener.taData.ema50, screener.taData.ema200].every(v => v != null);
+                      if (!noneNull) return null;
+                      return (
+                        <div className={`mt-3 pt-3 border-t border-dark-600 text-center text-xs font-semibold ${allAbove ? 'text-green-400' : 'text-yellow-400'}`}>
+                          {allAbove ? '✓ Price above all EMAs' : '✗ Not above all EMAs'}
+                        </div>
+                      );
+                    })()}
+                  </div>
 
-                <MetricBox label="EMA 20" value={screener.taData.ema20?.toFixed(2)} />
-                <MetricBox label="EMA 50" value={screener.taData.ema50?.toFixed(2)} />
-                <MetricBox label="EMA 200" value={screener.taData.ema200?.toFixed(2)} />
-                <MetricBox 
-                  label="Supertrend" 
-                  value={screener.taData.supertrendBullish === true ? 'Bullish' : screener.taData.supertrendBullish === false ? 'Bearish' : '-'} 
-                  color={screener.taData.supertrendBullish ? 'text-green-400' : 'text-red-400'}
-                />
+                  {/* SMA block */}
+                  <div className="bg-dark-800 rounded-xl border border-dark-600 p-4">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Simple MA (SMA)</p>
+                    <div className="space-y-2">
+                      {([
+                        { label: 'SMA 20', value: screener.taData.sma20 },
+                        { label: 'SMA 50', value: screener.taData.sma50 },
+                        { label: 'SMA 200', value: screener.taData.sma200 },
+                      ] as { label: string; value: number | null }[]).map(({ label, value }) => {
+                        const above = value != null && screener.taData.close > value;
+                        const available = value != null;
+                        return (
+                          <div key={label} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">{available ? value.toFixed(2) : '—'}</span>
+                              {available ? (
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${above ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                  {above ? '▲ Above' : '▼ Below'}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-600">N/A</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Summary badge */}
+                    {(() => {
+                      const price = screener.taData.close;
+                      const allAbove = [screener.taData.sma20, screener.taData.sma50, screener.taData.sma200].every(v => v != null && price > v);
+                      const noneNull = [screener.taData.sma20, screener.taData.sma50, screener.taData.sma200].every(v => v != null);
+                      if (!noneNull) return null;
+                      return (
+                        <div className={`mt-3 pt-3 border-t border-dark-600 text-center text-xs font-semibold ${allAbove ? 'text-green-400' : 'text-yellow-400'}`}>
+                          {allAbove ? '✓ Price above all SMAs' : '✗ Not above all SMAs'}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
 
-                <MetricBox label="Bollinger %B" value={screener.taData.bollingerB?.toFixed(2)} subtext={getBBLabel(screener.taData.bollingerB)} />
-                <MetricBox label="ATR %" value={screener.taData.atrPercent ? `${screener.taData.atrPercent.toFixed(2)}%` : '-'} subtext={getATRLabel(screener.taData.atrPercent)} />
-                <MetricBox label="Vol Ratio (20d)" value={screener.taData.volumeRatio ? `${screener.taData.volumeRatio.toFixed(2)}x` : '-'} subtext={getVolLabel(screener.taData.volumeRatio)} />
-                <MetricBox label="MFI (14)" value={screener.taData.mfi?.toFixed(2)} subtext={getRSILabel(screener.taData.mfi)} />
+              {/* Technical Indicators Breakdown */}
+              <div className="card">
+                <h3 className="text-lg font-bold text-white mb-6">Technical Indicators Breakdown</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <MetricBox label="RSI (14)" value={screener.taData.rsi?.toFixed(2)} subtext={getRSILabel(screener.taData.rsi)} />
+                  <MetricBox label="MACD Hist" value={screener.taData.macdHistogram?.toFixed(3)} subtext={getMACDLabel(screener.taData.macdHistogram)} />
+                  <MetricBox label="ADX (14)" value={screener.taData.adx?.toFixed(2)} subtext={getADXLabel(screener.taData.adx)} />
+                  <MetricBox label="CCI (20)" value={screener.taData.cci?.toFixed(2)} subtext={getCCILabel(screener.taData.cci)} />
+
+                  <MetricBox label="EMA 20" value={screener.taData.ema20?.toFixed(2)} />
+                  <MetricBox label="EMA 50" value={screener.taData.ema50?.toFixed(2)} />
+                  <MetricBox label="EMA 200" value={screener.taData.ema200?.toFixed(2)} />
+                  <MetricBox
+                    label="Supertrend"
+                    value={screener.taData.supertrendBullish === true ? 'Bullish' : screener.taData.supertrendBullish === false ? 'Bearish' : '-'}
+                    color={screener.taData.supertrendBullish ? 'text-green-400' : 'text-red-400'}
+                  />
+
+                  <MetricBox label="Bollinger %B" value={screener.taData.bollingerB?.toFixed(2)} subtext={getBBLabel(screener.taData.bollingerB)} />
+                  <MetricBox label="ATR %" value={screener.taData.atrPercent ? `${screener.taData.atrPercent.toFixed(2)}%` : '-'} subtext={getATRLabel(screener.taData.atrPercent)} />
+                  <MetricBox label="Vol Ratio (20d)" value={screener.taData.volumeRatio ? `${screener.taData.volumeRatio.toFixed(2)}x` : '-'} subtext={getVolLabel(screener.taData.volumeRatio)} />
+                  <MetricBox label="MFI (14)" value={screener.taData.mfi?.toFixed(2)} subtext={getRSILabel(screener.taData.mfi)} />
+                </div>
               </div>
             </div>
           )}
