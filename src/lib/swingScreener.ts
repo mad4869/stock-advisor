@@ -5,7 +5,7 @@ import { historyCache, singleScreenerCache, CACHE_TTL } from './cache';
 import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -119,6 +119,7 @@ async function runScreenerForSymbolRaw(
       OVERSOLD: 40,
       SHORT_SQUEEZE: 60,
       MA_TREND: 60,
+      TA_ONLY: 0, // not used as a gate for this preset
     };
     const accThreshold = accThresholdMap[preset];
     const accumulation = computeAccumulation(history, accThreshold);
@@ -127,7 +128,8 @@ async function runScreenerForSymbolRaw(
     // Early exit: if not accumulating, skip full TA computation.
     // This is both architecturally correct (follow smart money first)
     // and a performance optimization for large universes.
-    if (!accumulation.isAccumulating) {
+    // Exception: TA_ONLY preset ignores the smart money gate entirely.
+    if (!accumulation.isAccumulating && preset !== 'TA_ONLY') {
       result.isPass = false;
       return result;
     }
@@ -316,6 +318,12 @@ async function runScreenerForSymbolRaw(
       const allMaAbove = aboveEma20 && aboveEma50 && aboveEma200 && aboveSma20 && aboveSma50 && aboveSma200;
       taPass = taPass && allMaAbove;
       if (taPass) signals.push('Above All MAs (EMA & SMA)');
+    }
+    else if (preset === 'TA_ONLY') {
+      // Pure TA score gate — no smart money requirement.
+      // Only stocks with an elite TA score of 90+ pass.
+      taPass = totalTaScore >= 90;
+      if (taPass) signals.push('Elite TA Score (90+)');
     }
 
     if (taPass) {

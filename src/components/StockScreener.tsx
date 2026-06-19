@@ -5,7 +5,7 @@ import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Market, SwingScreenerResult } from '@/types';
 
-type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND';
+type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY';
 
 export default function StockScreener() {
   const router = useRouter();
@@ -151,6 +151,7 @@ export default function StockScreener() {
             <option value="SMART_MONEY">Strong Smart Money (3+ Signals)</option>
             <option value="VOLUME_CLIMAX">Volume Climax (Accumulation + Surge)</option>
             <option value="MA_TREND">MA Trend (Above All EMA &amp; SMA)</option>
+            <option value="TA_ONLY">Elite TA Only (Score 90+, No Smart Money)</option>
             {marketTab === 'US' && <option value="SHORT_SQUEEZE">Short Squeeze (US Only)</option>}
           </select>
         </div>
