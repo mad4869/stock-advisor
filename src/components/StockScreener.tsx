@@ -122,8 +122,20 @@ export default function StockScreener() {
               onChange={(e) => setUsUniverse(e.target.value)}
               className="input-field py-2"
             >
-              <option value="SP100">S&P 100 (Large Cap)</option>
-              <option value="TECH">Top US Tech</option>
+              <optgroup label="Broad Indices">
+                <option value="SP100">S&P 100 (Large Cap)</option>
+                <option value="SP500">S&P 500 (Full Index ~503)</option>
+                <option value="NASDAQ100">NASDAQ 100</option>
+                <option value="SP400">S&P 400 MidCap (~400)</option>
+                <option value="RUSSELL2000_TOP">Russell 2000 Top 500</option>
+              </optgroup>
+              <optgroup label="Sectors">
+                <option value="TECH">Top US Tech</option>
+                <option value="HEALTHCARE">Healthcare & Pharma</option>
+                <option value="ENERGY">Energy</option>
+                <option value="FINANCIALS">Financials</option>
+                <option value="CONSUMER">Consumer</option>
+              </optgroup>
             </select>
           ) : (
             <select
@@ -135,6 +147,9 @@ export default function StockScreener() {
               <option value="KOMPAS100">Kompas 100</option>
               <option value="ALL">All IDX Stocks (~900)</option>
             </select>
+          )}
+          {marketTab === 'US' && ['SP500', 'SP400', 'RUSSELL2000_TOP'].includes(usUniverse) && (
+            <p className="text-[10px] text-yellow-500/80 mt-1">⏱ Large universe — scanning may take several minutes</p>
           )}
         </div>
 
