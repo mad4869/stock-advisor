@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Market, SwingScreenerResult } from '@/types';
@@ -25,6 +25,44 @@ export default function StockScreener() {
 
   const isCancelledRef = useRef(false);
 
+  // ── Restore screener state from sessionStorage on mount ──
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('screenerState');
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.results?.length > 0) {
+          setResults(state.results);
+          setProgress(100);
+        }
+        if (state.marketTab) setMarketTab(state.marketTab);
+        if (state.usUniverse) setUsUniverse(state.usUniverse);
+        if (state.idUniverse) setIdUniverse(state.idUniverse);
+        if (state.preset) setPreset(state.preset);
+        if (state.tablePage) setTablePage(state.tablePage);
+      }
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
+
+  // ── Persist screener state to sessionStorage whenever results change ──
+  useEffect(() => {
+    if (results.length === 0) return;
+    try {
+      sessionStorage.setItem('screenerState', JSON.stringify({
+        results,
+        marketTab,
+        usUniverse,
+        idUniverse,
+        preset,
+        tablePage,
+      }));
+    } catch {
+      // ignore quota errors
+    }
+  }, [results, marketTab, usUniverse, idUniverse, preset, tablePage]);
+
   const handleCancelScreen = () => {
     isCancelledRef.current = true;
     setLoading(false);
@@ -38,6 +76,8 @@ export default function StockScreener() {
     setProgress(0);
     setTablePage(1);
     isCancelledRef.current = false;
+    // Clear saved state so a fresh scan starts clean
+    try { sessionStorage.removeItem('screenerState'); } catch { /* ignore */ }
 
     const universe = marketTab === 'US' ? usUniverse : idUniverse;
     let currentPage = 1;
