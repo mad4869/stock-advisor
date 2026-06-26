@@ -9,7 +9,8 @@ import {
   MFI,
   ATR,
   BollingerBands,
-  SMA
+  SMA,
+  PSAR
 } from 'technicalindicators';
 import { Market } from '@/types';
 import { roundToIDXTick } from './tickUtils';
@@ -30,6 +31,8 @@ export interface TAData {
   macdHistogram: number | null;
   macdIncreasing: boolean;
   adx: number | null;
+  plusDi: number | null;
+  minusDi: number | null;
   supertrendBullish: boolean | null;
 
   // Momentum
@@ -38,22 +41,43 @@ export interface TAData {
   stochD: number | null;
   stochRecovery: boolean;
   cci: number | null;
+  williamsR: number | null;
 
   // Volume
   volume20Avg: number | null;
   volumeRatio: number | null;
   obvTrendPositive: boolean;
   mfi: number | null;
+  vwap: number | null;
 
   // Volatility & Structure
   atrPercent: number | null;
   bollingerB: number | null;
   fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
   distanceTo52wHigh: number | null; // e.g. 0.05 for 5% away
   pivotS1: number | null;
   distanceToS1: number | null; // e.g. 0.02 for 2% away
   pivotR1: number | null;
   distanceToR1: number | null; // e.g. 0.02 for 2% away
+  psar: number | null;
+
+  // Ichimoku Cloud
+  tenkanSen: number | null;
+  kijunSen: number | null;
+  senkouSpanA: number | null;
+  senkouSpanB: number | null;
+
+  // Fibonacci Retracement Levels
+  fibonacciLevels: {
+    high: number;
+    low: number;
+    fib236: number;
+    fib382: number;
+    fib500: number;
+    fib618: number;
+    fib786: number;
+  } | null;
 
   // Trend Crossover Recency
   emaCrossoverRecency: number | null;
@@ -126,7 +150,10 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     close: closes,
     period: 14
   });
-  const adx = getLast(adxData)?.adx ?? null;
+  const adxOut = getLast(adxData);
+  const adx = adxOut?.adx ?? null;
+  const plusDi = adxOut?.pdi ?? null;
+  const minusDi = adxOut?.mdi ?? null;
 
   // Supertrend (Custom manual calc)
   // Supertrend relies on ATR and Upper/Lower bands. We'll do a simplified 10, 3 Supertrend.
@@ -237,13 +264,105 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     bollingerB = (currentClose - bb.lower) / (bb.upper - bb.lower);
   }
 
-  // 52-week High (assume ~252 trading days)
+  // 52-week High & Low (assume ~252 trading days)
   const days52W = Math.min(closes.length, 252);
   const high52WArr = highs.slice(highs.length - days52W);
   const fiftyTwoWeekHigh = high52WArr.length > 0 ? Math.max(...high52WArr) : null;
   let distanceTo52wHigh = null;
   if (fiftyTwoWeekHigh && fiftyTwoWeekHigh > 0) {
     distanceTo52wHigh = (fiftyTwoWeekHigh - currentClose) / fiftyTwoWeekHigh;
+  }
+
+  const low52WArr = lows.slice(lows.length - days52W);
+  const fiftyTwoWeekLow = low52WArr.length > 0 ? Math.min(...low52WArr) : null;
+
+  // Fibonacci Retracement Levels
+  let fibonacciLevels: any = null;
+  if (fiftyTwoWeekHigh != null && fiftyTwoWeekLow != null && fiftyTwoWeekHigh > fiftyTwoWeekLow) {
+    const diff = fiftyTwoWeekHigh - fiftyTwoWeekLow;
+    fibonacciLevels = {
+      high: fiftyTwoWeekHigh,
+      low: fiftyTwoWeekLow,
+      fib236: fiftyTwoWeekHigh - diff * 0.236,
+      fib382: fiftyTwoWeekHigh - diff * 0.382,
+      fib500: fiftyTwoWeekHigh - diff * 0.500,
+      fib618: fiftyTwoWeekHigh - diff * 0.618,
+      fib786: fiftyTwoWeekHigh - diff * 0.786,
+    };
+  }
+
+  // Williams %R (14 periods)
+  let williamsR = null;
+  if (closes.length >= 14) {
+    const sliceHighs = highs.slice(highs.length - 14);
+    const sliceLows = lows.slice(lows.length - 14);
+    const hh = Math.max(...sliceHighs);
+    const ll = Math.min(...sliceLows);
+    williamsR = (hh - ll) !== 0 ? ((hh - currentClose) / (hh - ll)) * -100 : null;
+  }
+
+  // VWAP (rolling 20-day VWAP)
+  let vwap = null;
+  if (closes.length >= 20) {
+    let sumPriceVol = 0;
+    let sumVol = 0;
+    for (let i = closes.length - 20; i < closes.length; i++) {
+      sumPriceVol += closes[i] * volumes[i];
+      sumVol += volumes[i];
+    }
+    vwap = sumVol > 0 ? sumPriceVol / sumVol : null;
+  }
+
+  // Parabolic SAR
+  let psar = null;
+  try {
+    const psarData = PSAR.calculate({
+      high: highs,
+      low: lows,
+      step: 0.02,
+      max: 0.2,
+    });
+    psar = getLast(psarData) ?? null;
+  } catch (e) {
+    // Graceful fallback if calculation fails
+  }
+
+  // Ichimoku Cloud
+  let tenkanSen = null;
+  let kijunSen = null;
+  let senkouSpanA = null;
+  let senkouSpanB = null;
+  if (closes.length >= 9) {
+    const h9 = highs.slice(highs.length - 9);
+    const l9 = lows.slice(lows.length - 9);
+    tenkanSen = (Math.max(...h9) + Math.min(...l9)) / 2;
+  }
+  if (closes.length >= 26) {
+    const h26 = highs.slice(highs.length - 26);
+    const l26 = lows.slice(lows.length - 26);
+    kijunSen = (Math.max(...h26) + Math.min(...l26)) / 2;
+  }
+  if (closes.length >= 52) {
+    // Cloud values for the current bar are calculated from 26 periods ago
+    const startIdx9 = highs.length - 9 - 26;
+    const startIdx26 = highs.length - 26 - 26;
+    const startIdx52 = highs.length - 52 - 26;
+
+    if (startIdx9 >= 0 && startIdx26 >= 0 && startIdx52 >= 0) {
+      const h9_26 = highs.slice(startIdx9, highs.length - 26);
+      const l9_26 = lows.slice(startIdx9, lows.length - 26);
+      const tenkan_26 = (Math.max(...h9_26) + Math.min(...l9_26)) / 2;
+
+      const h26_26 = highs.slice(startIdx26, highs.length - 26);
+      const l26_26 = lows.slice(startIdx26, lows.length - 26);
+      const kijun_26 = (Math.max(...h26_26) + Math.min(...l26_26)) / 2;
+
+      senkouSpanA = (tenkan_26 + kijun_26) / 2;
+
+      const h52_26 = highs.slice(startIdx52, highs.length - 26);
+      const l52_26 = lows.slice(startIdx52, lows.length - 26);
+      senkouSpanB = (Math.max(...h52_26) + Math.min(...l52_26)) / 2;
+    }
   }
 
   // Pivot S1 & R1
@@ -297,24 +416,35 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     macdHistogram,
     macdIncreasing,
     adx,
+    plusDi,
+    minusDi,
     supertrendBullish,
     rsi,
     stochK,
     stochD,
     stochRecovery,
     cci,
+    williamsR,
     volume20Avg,
     volumeRatio,
     obvTrendPositive,
     mfi,
+    vwap,
     atrPercent,
     bollingerB,
     fiftyTwoWeekHigh,
+    fiftyTwoWeekLow,
     distanceTo52wHigh,
     pivotS1,
     distanceToS1,
     pivotR1,
     distanceToR1,
+    psar,
+    tenkanSen,
+    kijunSen,
+    senkouSpanA,
+    senkouSpanB,
+    fibonacciLevels,
     emaCrossoverRecency,
     priceCrossoverRecency,
     macdCrossoverRecency

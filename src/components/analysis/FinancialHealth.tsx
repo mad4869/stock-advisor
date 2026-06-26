@@ -47,11 +47,11 @@ function GaugeChart({
   return (
     <div className="bg-dark-800 rounded-xl p-4 border border-dark-600 text-center">
       <p className="text-xs text-gray-500 mb-2">{label}</p>
-      <div className="relative mx-auto w-32 h-16 overflow-hidden">
-        <svg viewBox="0 0 120 60" className="w-full h-full">
+      <div className="relative mx-auto overflow-hidden" style={{ width: '120px', height: '60px' }}>
+        <svg viewBox="0 0 120 60" className="w-full h-full" style={{ overflow: 'hidden' }}>
           {/* Background arc */}
           <path
-            d="M 10 55 A 50 50 0 0 1 110 55"
+            d="M 15 50 A 45 45 0 0 1 105 50"
             fill="none"
             stroke="#2a2a3d"
             strokeWidth="8"
@@ -59,12 +59,12 @@ function GaugeChart({
           />
           {/* Value arc */}
           <path
-            d="M 10 55 A 50 50 0 0 1 110 55"
+            d="M 15 50 A 45 45 0 0 1 105 50"
             fill="none"
             stroke={color}
             strokeWidth="8"
             strokeLinecap="round"
-            strokeDasharray={`${(angle / 180) * 157} 157`}
+            strokeDasharray={`${(angle / 180) * 141.4} 141.4`}
             className="transition-all duration-700"
           />
         </svg>

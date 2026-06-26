@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStockQuote } from '@/lib/stockData';
 import { Signal, Market, SwingScreenerResult } from '@/types';
 import { singleScreenerCache } from '@/lib/cache';
+import { runScreenerForSymbol } from '@/lib/swingScreener';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,10 +98,20 @@ export async function POST(request: NextRequest) {
 
         let action: Signal | undefined;
         let reason: string | undefined;
+        let fundamentalScore: any = null;
 
-        if (cachedScreener) {
-          const taComputed = cachedScreener.taData !== null;
-          const currentScore = cachedScreener.taScore;
+        let screenerResult = cachedScreener;
+        if (!screenerResult) {
+          try {
+            screenerResult = await runScreenerForSymbol(item.symbol, item.market as Market, 'DEFAULT');
+          } catch (e) {
+            console.warn(`[Watchlist API] Failed to run screener for ${item.symbol}:`, e);
+          }
+        }
+
+        if (screenerResult) {
+          const taComputed = screenerResult.taData !== null;
+          const currentScore = screenerResult.taScore;
           const actionDetails = determineAction(
             currentScore,
             taComputed,
@@ -111,6 +122,7 @@ export async function POST(request: NextRequest) {
           );
           action = actionDetails.action;
           reason = actionDetails.reason;
+          fundamentalScore = screenerResult.fundamentalScore || null;
         } else {
           // Cold cache fallback: check stop loss or take profit triggers only
           if (item.stopLossPrice && currentPrice <= item.stopLossPrice) {
@@ -138,6 +150,10 @@ export async function POST(request: NextRequest) {
         if (action !== undefined) {
           updateObj.action = action;
           updateObj.actionReason = reason;
+        }
+
+        if (fundamentalScore !== null) {
+          updateObj.fundamentalScore = fundamentalScore;
         }
 
         return updateObj;

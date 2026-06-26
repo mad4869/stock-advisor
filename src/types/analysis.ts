@@ -87,6 +87,51 @@ export interface DividendInfo {
   fiveYearAvgDividendYield: number | null;
 }
 
+// ====== Short Interest ======
+
+export interface ShortInterestData {
+  shortPercentOfFloat: number | null;  // 0–100 scale
+  shortRatio: number | null;           // days to cover
+  sharesShort: number | null;
+  sharesShortPriorMonth: number | null;
+  // Derived
+  shortInterestRising: boolean | null; // sharesShort > sharesShortPriorMonth
+}
+
+// ====== EPS Revision ======
+
+export interface EpsRevisionData {
+  epsRevisionUp: boolean | null;     // true = estimate revised up vs 30d ago
+  currentEstimate: number | null;    // current consensus EPS estimate
+  thirtyDayAgoEstimate: number | null;
+  revisionPercent: number | null;    // % change in estimate
+}
+
+// ====== Earnings Calendar ======
+
+export interface EarningsCalendar {
+  nextEarningsDate: string | null;   // ISO date
+  daysToEarnings: number | null;     // business days until next earnings
+  isEarningsImminent: boolean;       // true if within 7 calendar days
+}
+
+// ====== Analyst Upgrade/Downgrade History ======
+
+export interface AnalystAction {
+  firm: string;
+  toGrade: string;
+  fromGrade: string;
+  action: 'upgrade' | 'downgrade' | 'init' | 'reit';
+  date: string;   // ISO date
+}
+
+export interface UpgradeDowngradeHistory {
+  recentActions: AnalystAction[];   // last 90 days
+  upgradeCount30d: number;
+  downgradeCount30d: number;
+  netScore: number;                 // upgrades - downgrades in last 30 days
+}
+
 // ====== Red Flags ======
 
 export type RedFlagSeverity = 'warning' | 'danger';
@@ -143,6 +188,35 @@ export const IDX_THRESHOLDS: ValuationThresholds = {
   evToEbitda: { good: 8, fair: 12 },
 };
 
+// ====== Insider Activity ======
+
+export interface InsiderTransaction {
+  filerName: string;
+  filerRelation: string;
+  shares: number;
+  date: string; // ISO date (YYYY-MM-DD)
+  transactionText: string; // e.g. Purchase, Sale, Option Exercise
+}
+
+export interface InsiderActivity {
+  netSharesBought90d: number | null; // positive = net buying, negative = net selling
+  buyShares90d: number | null;
+  sellShares90d: number | null;
+  recentTransactions: InsiderTransaction[]; // last 10 transactions
+}
+
+// ====== Fibonacci Retracement Levels ======
+
+export interface FibonacciLevels {
+  high: number;
+  low: number;
+  fib236: number;
+  fib382: number;
+  fib500: number;
+  fib618: number;
+  fib786: number;
+}
+
 // ====== Comprehensive Analysis ======
 
 export interface ComprehensiveAnalysis {
@@ -182,6 +256,33 @@ export interface ComprehensiveAnalysis {
   fcfYield: number | null;       // FCF / MarketCap
   interestCoverage: number | null; // EBIT / Interest Expense
   debtToEbitda: number | null;
+
+  // ── New enrichment fields ──────────────────────────────────────────
+
+  /** Short interest data from defaultKeyStatistics */
+  shortInterest: ShortInterestData;
+
+  /** EPS revision direction vs 30 days ago */
+  epsRevision: EpsRevisionData;
+
+  /** Next earnings date and proximity warning */
+  earningsCalendar: EarningsCalendar;
+
+  /** Recent analyst upgrade/downgrade activity (last 90 days) */
+  upgradeDowngrades: UpgradeDowngradeHistory;
+
+  /** 52-week relative performance vs S&P 500 (US only) */
+  relativeStrength52W: number | null;  // stock 52W change - S&P 52W change (pp)
+  stock52WChange: number | null;       // stock 52W price change %
+
+  /** Insider purchase and sale activity (US only) */
+  insiderActivity?: InsiderActivity | null;
+
+  /** 52-week low price */
+  fiftyTwoWeekLow?: number | null;
+
+  /** Calculated Fibonacci retracement levels based on 52W High and Low */
+  fibonacciLevels?: FibonacciLevels | null;
 }
 
 // ====== API Response ======

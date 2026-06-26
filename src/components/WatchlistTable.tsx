@@ -732,6 +732,24 @@ function WatchlistCard({
               {item.market === 'ID' ? '🇮🇩' : '🇺🇸'}
             </span>
             <SignalBadge signal={item.action} size="sm" />
+            {item.fundamentalScore && (
+              <span 
+                className={`text-xs px-2 py-0.5 rounded-full font-bold transition-all duration-200 ${
+                  item.fundamentalScore.grade === 'A'
+                    ? 'bg-green-500/10 text-green-400 border border-green-500/30'
+                    : item.fundamentalScore.grade === 'B'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                      : item.fundamentalScore.grade === 'C'
+                        ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30'
+                        : item.fundamentalScore.grade === 'D'
+                          ? 'bg-orange-500/10 text-orange-400 border border-orange-500/30'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/30'
+                }`}
+                title={`Fundamental Quality Score: ${item.fundamentalScore.total}/100. Valuation: ${item.fundamentalScore.valuation}/20, Growth: ${item.fundamentalScore.growth}/20, Profitability: ${item.fundamentalScore.profitability}/15, Health: ${item.fundamentalScore.health}/15, Cash Flow: ${item.fundamentalScore.cashFlow}/15, Analyst: ${item.fundamentalScore.analyst}/15.`}
+              >
+                Quality: {item.fundamentalScore.grade} ({item.fundamentalScore.total})
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-500">{item.name}</p>
         </div>

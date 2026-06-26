@@ -18,6 +18,11 @@ import {
   AnnualCashFlow,
   DividendInfo,
   PeerData,
+  ShortInterestData,
+  EpsRevisionData,
+  EarningsCalendar,
+  UpgradeDowngradeHistory,
+  AnalystAction,
 } from '@/types/analysis';
 import { FundamentalData } from '@/types/screener';
 import { Market } from '@/types';
@@ -280,6 +285,9 @@ export async function getComprehensiveAnalysis2(
         'cashflowStatementHistory',
         'calendarEvents',
         'recommendationTrend',
+        'upgradeDowngradeHistory',   // NEW: analyst upgrade/downgrade activity
+        'insiderTransactions',       // NEW: insider trade transactions
+        'netSharePurchaseActivity',  // NEW: insider trade net summary
       ],
     })
   );
@@ -524,6 +532,181 @@ export async function getComprehensiveAnalysis2(
       ? latestBS.totalDebt / latestIncome.ebitda
       : null;
 
+  // ---- Short Interest (from defaultKeyStatistics) ----
+  const shortPercentOfFloat = r(ks.shortPercentOfFloat);
+  const sharesShort = r(ks.sharesShort);
+  const sharesShortPriorMonth = r(ks.sharesShortPriorMonth);
+  const shortInterest: ShortInterestData = {
+    shortPercentOfFloat: shortPercentOfFloat != null ? shortPercentOfFloat * 100 : null, // convert to 0-100 scale
+    shortRatio: r(ks.shortRatio),
+    sharesShort,
+    sharesShortPriorMonth,
+    shortInterestRising:
+      sharesShort != null && sharesShortPriorMonth != null && sharesShortPriorMonth > 0
+        ? sharesShort > sharesShortPriorMonth
+        : null,
+  };
+
+  // ---- EPS Revision (from earningsTrend) ----
+  let epsRevision: EpsRevisionData = {
+    epsRevisionUp: null,
+    currentEstimate: null,
+    thirtyDayAgoEstimate: null,
+    revisionPercent: null,
+  };
+  {
+    const nearTerm = earningsTrend.find(
+      (t: any) => t.period === '0q' || t.period === '0y'
+    );
+    if (nearTerm?.epsTrend) {
+      const current = r(nearTerm.epsTrend.current);
+      const thirtyDaysAgo = r(nearTerm.epsTrend['30daysAgo']);
+      epsRevision = {
+        currentEstimate: current,
+        thirtyDayAgoEstimate: thirtyDaysAgo,
+        epsRevisionUp:
+          current != null && thirtyDaysAgo != null && thirtyDaysAgo !== 0
+            ? current > thirtyDaysAgo
+            : null,
+        revisionPercent:
+          current != null && thirtyDaysAgo != null && thirtyDaysAgo !== 0
+            ? ((current - thirtyDaysAgo) / Math.abs(thirtyDaysAgo)) * 100
+            : null,
+      };
+    }
+  }
+
+  // ---- Earnings Calendar (from calendarEvents) ----
+  let earningsCalendar: EarningsCalendar = {
+    nextEarningsDate: null,
+    daysToEarnings: null,
+    isEarningsImminent: false,
+  };
+  {
+    const calEarnings = (calEvents as any)?.earnings;
+    const earningsDatesRaw: any[] = calEarnings?.earningsDate || [];
+    const now = Date.now();
+    const upcomingTs = earningsDatesRaw
+      .map((d: any) => {
+        if (d instanceof Date) return d.getTime();
+        if (typeof d === 'string') return new Date(d).getTime();
+        return null;
+      })
+      .filter((t): t is number => t != null && t > now)
+      .sort((a, b) => a - b);
+
+    if (upcomingTs.length > 0) {
+      const nextTs = upcomingTs[0];
+      const daysAway = Math.ceil((nextTs - now) / (1000 * 60 * 60 * 24));
+      earningsCalendar = {
+        nextEarningsDate: new Date(nextTs).toISOString().split('T')[0],
+        daysToEarnings: daysAway,
+        isEarningsImminent: daysAway <= 7,
+      };
+    }
+  }
+
+  // ---- Upgrade/Downgrade History ----
+  let upgradeDowngrades: UpgradeDowngradeHistory = {
+    recentActions: [],
+    upgradeCount30d: 0,
+    downgradeCount30d: 0,
+    netScore: 0,
+  };
+  {
+    const rawHistory: any[] = (result.upgradeDowngradeHistory as any)?.history || [];
+    const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const cutoff30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    const recentActions: AnalystAction[] = rawHistory
+      .filter((item: any) => {
+        const ts = item.epochGradeDate ? item.epochGradeDate * 1000 : null;
+        return ts && ts >= cutoff90d;
+      })
+      .map((item: any): AnalystAction => {
+        const action = item.action?.toLowerCase() || '';
+        let normalizedAction: AnalystAction['action'] = 'reit';
+        if (action === 'up') normalizedAction = 'upgrade';
+        else if (action === 'down') normalizedAction = 'downgrade';
+        else if (action === 'init' || action === 'main') normalizedAction = 'init';
+        return {
+          firm: item.firm || 'Unknown',
+          toGrade: item.toGrade || '',
+          fromGrade: item.fromGrade || '',
+          action: normalizedAction,
+          date: item.epochGradeDate
+            ? new Date(item.epochGradeDate * 1000).toISOString().split('T')[0]
+            : '',
+        };
+      })
+      .slice(0, 20); // cap at 20 for response size
+
+    // Count 30-day upgrades vs downgrades
+    let upgradeCount30d = 0;
+    let downgradeCount30d = 0;
+    for (const item of rawHistory) {
+      const ts = item.epochGradeDate ? item.epochGradeDate * 1000 : null;
+      if (!ts || ts < cutoff30d) continue;
+      const action = item.action?.toLowerCase() || '';
+      if (action === 'up') upgradeCount30d++;
+      else if (action === 'down') downgradeCount30d++;
+    }
+
+    upgradeDowngrades = {
+      recentActions,
+      upgradeCount30d,
+      downgradeCount30d,
+      netScore: upgradeCount30d - downgradeCount30d,
+    };
+  }
+
+  // ---- 52-Week Relative Strength ----
+  const stock52WChange = r(ks['52WeekChange']) != null ? r(ks['52WeekChange'])! * 100 : null;
+  const sp52WChange = r(ks.SandP52WeekChange) != null ? r(ks.SandP52WeekChange)! * 100 : null;
+  const relativeStrength52W =
+    stock52WChange != null && sp52WChange != null
+      ? stock52WChange - sp52WChange
+      : null;
+
+  // ---- 52-Week Low & Fibonacci Levels ----
+  const fiftyTwoWeekLow = r(sd.fiftyTwoWeekLow) != null ? r(sd.fiftyTwoWeekLow) : r(ks.fiftyTwoWeekLow);
+  const fiftyTwoWeekHigh = r(sd.fiftyTwoWeekHigh) != null ? r(sd.fiftyTwoWeekHigh) : r(ks.fiftyTwoWeekHigh);
+  let fibonacciLevels: any = null;
+  if (fiftyTwoWeekHigh != null && fiftyTwoWeekLow != null && fiftyTwoWeekHigh > fiftyTwoWeekLow) {
+    const diff = fiftyTwoWeekHigh - fiftyTwoWeekLow;
+    fibonacciLevels = {
+      high: fiftyTwoWeekHigh,
+      low: fiftyTwoWeekLow,
+      fib236: fiftyTwoWeekHigh - diff * 0.236,
+      fib382: fiftyTwoWeekHigh - diff * 0.382,
+      fib500: fiftyTwoWeekHigh - diff * 0.500,
+      fib618: fiftyTwoWeekHigh - diff * 0.618,
+      fib786: fiftyTwoWeekHigh - diff * 0.786,
+    };
+  }
+
+  // ---- Insider Activity ----
+  let insiderActivity: any = null;
+  if (result.insiderTransactions || result.netSharePurchaseActivity) {
+    const rawTransactions: any[] = (result.insiderTransactions as any)?.transactions || [];
+    const netPurchase: any = result.netSharePurchaseActivity || {};
+
+    const recentTransactions = rawTransactions.slice(0, 10).map((t: any) => ({
+      filerName: t.filerName || 'Unknown',
+      filerRelation: t.filerRelation || 'Unknown',
+      shares: r(t.shares) || 0,
+      date: t.startDate ? new Date(t.startDate).toISOString().split('T')[0] : '',
+      transactionText: t.transactionText || 'Unknown',
+    }));
+
+    insiderActivity = {
+      netSharesBought90d: r(netPurchase.netSharePurchaseActivity) || null,
+      buyShares90d: r(netPurchase.buyInfoShares) || null,
+      sellShares90d: r(netPurchase.sellInfoShares) || null,
+      recentTransactions,
+    };
+  }
+
   const analysis: ComprehensiveAnalysis = {
     profile,
     fundamentals: fundamentalData,
@@ -543,6 +726,16 @@ export async function getComprehensiveAnalysis2(
     fcfYield,
     interestCoverage,
     debtToEbitda,
+    // New enrichment fields
+    shortInterest,
+    epsRevision,
+    earningsCalendar,
+    upgradeDowngrades,
+    relativeStrength52W,
+    stock52WChange,
+    fiftyTwoWeekLow,
+    fibonacciLevels,
+    insiderActivity,
   };
 
   fundamentalsCache.set(cacheKey, analysis, CACHE_TTL.FUNDAMENTALS);

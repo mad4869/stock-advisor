@@ -4,6 +4,7 @@ import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
 import { historyCache, singleScreenerCache, CACHE_TTL } from './cache';
 import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
+import { computeFundamentalScore } from './fundamentalScorer';
 
 export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY';
 
@@ -299,6 +300,7 @@ async function runScreenerForSymbolRaw(
     }
     else if (preset === 'SHORT_SQUEEZE') {
       // Accumulation (≥3/5) + squeeze pattern (US only in practice)
+      // Also requires actual short interest data > 10% of float
       const volReq = ta.volumeRatio ? ta.volumeRatio >= 2.5 : false;
       const emaReq = ta.ema20 ? price > ta.ema20 : false;
       const stochReq = ta.stochRecovery;
@@ -336,6 +338,93 @@ async function runScreenerForSymbolRaw(
         if (dangerFlags.length > 0) {
           taPass = false;
           signals.push(`Blocked by Red Flag: ${dangerFlags[0].title}`);
+        } else {
+          // ── Fundamental Quality Scoring (zero extra API calls) ──
+          const fundScore = computeFundamentalScore(analysis, market);
+          result.fundamentalScore = {
+            total: fundScore.total,
+            grade: fundScore.grade,
+            valuation: fundScore.valuation,
+            growth: fundScore.growth,
+            profitability: fundScore.profitability,
+            health: fundScore.health,
+            cashFlow: fundScore.cashFlow,
+            analyst: fundScore.analyst,
+            signals: fundScore.signals,
+            warnings: fundScore.warnings,
+          };
+
+          // ── Analyst Consensus ──
+          result.analystUpside = fundScore.analystUpside;
+          result.analystConsensus = fundScore.analystConsensus;
+          result.analystTargetPrice = analysis.analystRating.targetMeanPrice;
+
+          // ── Short Interest (for SHORT_SQUEEZE gate + display) ──
+          const si = analysis.shortInterest;
+          result.shortInterestPct = si.shortPercentOfFloat;
+          result.shortRatioDays = si.shortRatio;
+
+          // Apply actual short interest gate to SHORT_SQUEEZE preset AFTER fundamentals are loaded
+          if (preset === 'SHORT_SQUEEZE' && taPass) {
+            const hasHighShortInterest = si.shortPercentOfFloat != null && si.shortPercentOfFloat >= 10;
+            if (!hasHighShortInterest) {
+              taPass = false;
+              // Don't add a blocking signal — just silently fail the preset
+              // (short interest data may be missing for IDX stocks)
+              if (si.shortPercentOfFloat != null) {
+                signals.push(`Short interest too low (${si.shortPercentOfFloat.toFixed(1)}% of float)`);
+              }
+            } else {
+              signals.push(`High short interest (${si.shortPercentOfFloat!.toFixed(1)}% of float)`);
+            }
+          }
+
+          // ── EPS Revision ──
+          const eps = analysis.epsRevision;
+          result.epsRevisionUp = eps.epsRevisionUp;
+          if (eps.epsRevisionUp === true && eps.revisionPercent != null) {
+            signals.push(`EPS estimate revised up (+${eps.revisionPercent.toFixed(1)}% vs 30d ago)`);
+          } else if (eps.epsRevisionUp === false) {
+            // Negative revision — note it but don't block
+          }
+
+          // ── Earnings Calendar ──
+          const ec = analysis.earningsCalendar;
+          result.daysToEarnings = ec.daysToEarnings;
+          result.earningsDate = ec.nextEarningsDate;
+
+          // ── 52-Week Relative Strength Signal ──
+          if (analysis.relativeStrength52W != null && analysis.relativeStrength52W >= 15) {
+            signals.push(`Outperforming market by ${analysis.relativeStrength52W.toFixed(1)}pp (52W)`);
+          }
+
+          // ── Analyst Upgrade Activity ──
+          const ud = analysis.upgradeDowngrades;
+          if (ud.upgradeCount30d >= 2 && ud.netScore >= 2) {
+            signals.push(`${ud.upgradeCount30d} analyst upgrades in last 30 days`);
+          }
+
+          // ── Sector ──
+          result.sector = analysis.profile.sector || null;
+
+          // ── Insider Activity ──
+          if (analysis.insiderActivity) {
+            result.insiderActivity = {
+              netSharesBought90d: analysis.insiderActivity.netSharesBought90d,
+              buyShares90d: analysis.insiderActivity.buyShares90d,
+              sellShares90d: analysis.insiderActivity.sellShares90d,
+            };
+          } else {
+            result.insiderActivity = null;
+          }
+
+          // ── 52W Low & Fib Levels ──
+          result.fiftyTwoWeekLow = analysis.fiftyTwoWeekLow || null;
+          result.fibonacciLevels = analysis.fibonacciLevels || null;
+
+          // ── 52W Relative Strength ──
+          result.relativeStrength52W = analysis.relativeStrength52W || null;
+          result.stock52WChange = analysis.stock52WChange || null;
         }
       } catch (err: any) {
         console.warn(`[Screener] Failed to fetch fundamentals/red flags for ${cleanSymbol}: ${err.message}`);

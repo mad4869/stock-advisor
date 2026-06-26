@@ -272,6 +272,7 @@ export default function StockScreener() {
                 <th className="py-3 px-4 font-semibold">Symbol</th>
                 <th className="py-3 px-4 font-semibold">Smart Money</th>
                 <th className="py-3 px-4 font-semibold">TA Score</th>
+                <th className="py-3 px-4 font-semibold">Quality</th>
                 <th className="py-3 px-4 font-semibold">Signals</th>
                 <th className="py-3 px-4 font-semibold text-right">Action</th>
               </tr>
@@ -279,7 +280,7 @@ export default function StockScreener() {
             <tbody>
               {loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500">
+                  <td colSpan={6} className="py-8 text-center text-gray-500">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
                     Scanning {marketTab === 'US' ? usUniverse : idUniverse} for {preset} setups...<br/>
                     <span className="text-xs">Filtering by smart money accumulation first, then scoring technical setups.</span>
@@ -289,7 +290,7 @@ export default function StockScreener() {
 
               {!loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500">
+                  <td colSpan={6} className="py-8 text-center text-gray-500">
                     <Info className="w-6 h-6 mx-auto mb-2 text-gray-600" />
                     No stocks passed the current screening criteria.
                   </td>
@@ -337,6 +338,28 @@ export default function StockScreener() {
                         </div>
                       </td>
                       <td className="py-3 px-4">
+                        {result.fundamentalScore ? (
+                          <span 
+                            className={`text-xs px-2 py-0.5 rounded font-bold transition-all duration-200 ${
+                              result.fundamentalScore.grade === 'A'
+                                ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                : result.fundamentalScore.grade === 'B'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : result.fundamentalScore.grade === 'C'
+                                    ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                                    : result.fundamentalScore.grade === 'D'
+                                      ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                                      : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}
+                            title={`Score: ${result.fundamentalScore.total}/100`}
+                          >
+                            {result.fundamentalScore.grade} ({result.fundamentalScore.total})
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-500">N/A</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1">
                           {result.signals.slice(0, 2).map((sig, idx) => (
                             <span key={idx} className="text-[10px] bg-dark-600 text-gray-300 px-1.5 py-0.5 rounded border border-dark-500">
@@ -354,8 +377,154 @@ export default function StockScreener() {
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={5} className="bg-dark-900/60 p-4 border-b border-dark-700">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-gray-300">
+                        <td colSpan={6} className="bg-dark-900/60 p-4 border-b border-dark-700">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-gray-300">
+                            {/* Fundamental Quality details */}
+                            <div className="bg-dark-800 p-4 rounded-xl border border-dark-700 flex flex-col justify-between">
+                              <div>
+                                <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Fundamental Quality</h4>
+                                {result.fundamentalScore ? (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                      <span className={`text-2xl font-black px-3 py-1 rounded ${
+                                        result.fundamentalScore.grade === 'A' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                                        result.fundamentalScore.grade === 'B' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                        result.fundamentalScore.grade === 'C' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                        result.fundamentalScore.grade === 'D' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                                        'bg-red-500/10 text-red-400 border border-red-500/20'
+                                      }`}>
+                                        {result.fundamentalScore.grade}
+                                      </span>
+                                      <div>
+                                        <div className="text-sm font-bold text-white">{result.fundamentalScore.total} / 100 Score</div>
+                                        <div className="text-[10px] text-gray-500">Based on financial statement metrics</div>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                        <span className="text-gray-400">Valuation:</span>
+                                        <span className="font-semibold text-white">{result.fundamentalScore.valuation}/20</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                        <span className="text-gray-400">Growth:</span>
+                                        <span className="font-semibold text-white">{result.fundamentalScore.growth}/20</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                        <span className="text-gray-400">Profitability:</span>
+                                        <span className="font-semibold text-white">{result.fundamentalScore.profitability}/15</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                        <span className="text-gray-400">Health:</span>
+                                        <span className="font-semibold text-white">{result.fundamentalScore.health}/15</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                        <span className="text-gray-400">Cash Flow:</span>
+                                        <span className="font-semibold text-white">{result.fundamentalScore.cashFlow}/15</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
+                                        <span className="text-gray-400">Analyst score:</span>
+                                        <span className="font-semibold text-white">{result.fundamentalScore.analyst}/15</span>
+                                      </div>
+                                    </div>
+
+                                    {/* Analyst Consensus details */}
+                                    <div className="pt-2 border-t border-dark-700 space-y-1 text-xs">
+                                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Analyst Consensus</div>
+                                      {result.analystConsensus ? (
+                                        <>
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-400">Consensus:</span>
+                                            <span className={`font-semibold capitalize ${
+                                              result.analystConsensus.includes('buy') ? 'text-green-400' :
+                                              result.analystConsensus.includes('sell') ? 'text-red-400' : 'text-yellow-400'
+                                            }`}>
+                                              {result.analystConsensus.replace('_', ' ')}
+                                            </span>
+                                          </div>
+                                          {result.analystUpside != null && (
+                                            <div className="flex justify-between">
+                                              <span className="text-gray-400">Target Upside:</span>
+                                              <span className={`font-bold ${result.analystUpside >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                {result.analystUpside >= 0 ? '+' : ''}{result.analystUpside.toFixed(1)}%
+                                              </span>
+                                            </div>
+                                          )}
+                                          {result.analystTargetPrice != null && (
+                                            <div className="flex justify-between">
+                                              <span className="text-gray-400">Mean Target:</span>
+                                              <span className="text-white font-semibold">
+                                                {marketTab === 'ID' ? 'Rp' : '$'}{result.analystTargetPrice.toLocaleString(marketTab === 'ID' ? 'id-ID' : 'en-US')}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <div className="text-gray-500 text-[11px]">No analyst targets available.</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-500">Fundamental data not available.</p>
+                                )}
+                              </div>
+
+                              <div className="mt-3 pt-3 border-t border-dark-700 space-y-1 text-xs">
+                                {result.sector && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Sector:</span>
+                                    <span className="text-white font-semibold">{result.sector}</span>
+                                  </div>
+                                )}
+                                {result.stock52WChange != null && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">52W Change:</span>
+                                    <span className={`font-semibold ${result.stock52WChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                      {result.stock52WChange >= 0 ? '+' : ''}{result.stock52WChange.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                )}
+                                {result.relativeStrength52W != null && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">vs S&P 500:</span>
+                                    <span className={`font-semibold ${result.relativeStrength52W >= 0 ? 'text-green-400 font-bold' : 'text-red-400'}`}>
+                                      {result.relativeStrength52W >= 0 ? '+' : ''}{result.relativeStrength52W.toFixed(1)}pp
+                                    </span>
+                                  </div>
+                                )}
+                                {result.insiderActivity && result.insiderActivity.netSharesBought90d != null && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Insider Trades (90d):</span>
+                                    <span className={`font-semibold ${result.insiderActivity.netSharesBought90d > 0 ? 'text-green-400 font-bold' : result.insiderActivity.netSharesBought90d < -100000 ? 'text-red-400 font-bold' : 'text-white'}`}>
+                                      {result.insiderActivity.netSharesBought90d > 0 ? 'Net Buying' : 'Net Selling'} ({Math.abs(result.insiderActivity.netSharesBought90d).toLocaleString()} sh)
+                                    </span>
+                                  </div>
+                                )}
+                                {result.shortInterestPct != null && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Short % of Float:</span>
+                                    <span className={`font-semibold ${result.shortInterestPct >= 10 ? 'text-yellow-400' : 'text-white'}`}>
+                                      {result.shortInterestPct.toFixed(2)}%
+                                    </span>
+                                  </div>
+                                )}
+                                {result.shortRatioDays != null && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Days to Cover:</span>
+                                    <span className="text-white font-semibold">{result.shortRatioDays.toFixed(1)} days</span>
+                                  </div>
+                                )}
+                                {result.earningsDate && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-400">Next Earnings:</span>
+                                    <span className={`font-semibold ${result.daysToEarnings != null && result.daysToEarnings <= 7 ? 'text-yellow-400 font-bold' : 'text-white'}`}>
+                                      {result.earningsDate} {result.daysToEarnings != null ? `(${result.daysToEarnings}d)` : ''}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
                             {/* Smart Money details */}
                             <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
                               <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Smart Money Breakdown</h4>
@@ -524,7 +693,7 @@ export default function StockScreener() {
               
               {loading && results.length > 0 && (
                 <tr>
-                  <td colSpan={5} className="py-4 text-center text-gray-500 bg-dark-800/50">
+                  <td colSpan={6} className="py-4 text-center text-gray-500 bg-dark-800/50">
                     <Loader2 className="w-4 h-4 animate-spin mx-auto inline text-blue-500 mr-2" />
                     Scanning remaining chunks... ({progress}%)
                   </td>

@@ -185,6 +185,103 @@ export function detectRedFlags(analysis: ComprehensiveAnalysis): RedFlag[] {
     }
   }
 
+  // 10. Earnings Imminent Warning (< 7 calendar days)
+  if (analysis.earningsCalendar?.isEarningsImminent && analysis.earningsCalendar.daysToEarnings != null) {
+    flags.push({
+      id: 'earnings-imminent',
+      title: 'Earnings in Less Than 7 Days',
+      message: `Next earnings date is ${analysis.earningsCalendar.nextEarningsDate} (${analysis.earningsCalendar.daysToEarnings} day${analysis.earningsCalendar.daysToEarnings === 1 ? '' : 's'} away). Expect elevated volatility — consider waiting until after earnings to enter a new position.`,
+      severity: 'warning',
+      metric: 'Days to Earnings',
+      currentValue: `${analysis.earningsCalendar.daysToEarnings} days`,
+      threshold: '> 7 days for new entries',
+    });
+  }
+
+  // 11. OCF vs Net Income Divergence (earnings quality)
+  if (sortedFinancials.length >= 2 && sortedCashFlows.length >= 2) {
+    const latestNI = sortedFinancials[sortedFinancials.length - 1]?.netIncome;
+    const latestOCF = sortedCashFlows[sortedCashFlows.length - 1]?.operatingCashFlow;
+    if (latestNI != null && latestNI > 0 && latestOCF != null) {
+      const ocfToNetIncome = latestOCF / latestNI;
+      if (ocfToNetIncome < 0.6) {
+        flags.push({
+          id: 'ocf-ni-divergence',
+          title: 'Low Cash Earnings Quality',
+          message: `Operating cash flow is only ${(ocfToNetIncome * 100).toFixed(0)}% of net income. Earnings may be driven by accruals rather than real cash generation.`,
+          severity: 'warning',
+          metric: 'OCF / Net Income',
+          currentValue: `${(ocfToNetIncome * 100).toFixed(0)}%`,
+          threshold: '> 60%',
+        });
+      }
+    }
+  }
+
+  // 12. Share Dilution (EPS growing slower than net income = dilution)
+  if (sortedFinancials.length >= 2) {
+    const latestNI = sortedFinancials[sortedFinancials.length - 1]?.netIncome;
+    const prevNI = sortedFinancials[sortedFinancials.length - 2]?.netIncome;
+    const latestEPS = sortedFinancials[sortedFinancials.length - 1]?.eps;
+    const prevEPS = sortedFinancials[sortedFinancials.length - 2]?.eps;
+
+    if (latestNI != null && prevNI != null && latestNI > 0 && prevNI > 0 &&
+        latestEPS != null && prevEPS != null && prevEPS > 0) {
+      const niGrowth = (latestNI - prevNI) / Math.abs(prevNI);
+      const epsGrowth = (latestEPS - prevEPS) / Math.abs(prevEPS);
+      const dilutionProxy = niGrowth - epsGrowth;
+      if (dilutionProxy > 0.08) {
+        flags.push({
+          id: 'share-dilution',
+          title: 'Share Dilution Detected',
+          message: `Net income grew ${(niGrowth * 100).toFixed(1)}% but EPS only grew ${(epsGrowth * 100).toFixed(1)}% — suggesting share dilution of ~${(dilutionProxy * 100).toFixed(1)}pp that reduces per-share value.`,
+          severity: 'warning',
+          metric: 'NI Growth vs EPS Growth',
+          currentValue: `${(dilutionProxy * 100).toFixed(1)}pp gap`,
+          threshold: '< 8pp divergence',
+        });
+      }
+    }
+  }
+
+  // 13. Analyst Consensus Strongly Bearish (net downgrades in last 30 days)
+  if (analysis.upgradeDowngrades) {
+    const { netScore, downgradeCount30d } = analysis.upgradeDowngrades;
+    if (netScore <= -2 && downgradeCount30d >= 2) {
+      flags.push({
+        id: 'analyst-downgrades',
+        title: 'Recent Analyst Downgrades',
+        message: `${downgradeCount30d} analyst downgrade${downgradeCount30d > 1 ? 's' : ''} in the last 30 days with a net score of ${netScore}. Institutional sentiment is deteriorating.`,
+        severity: 'warning',
+        metric: 'Analyst Net Score (30d)',
+        currentValue: `${netScore} net`,
+        threshold: '≥ 0 net score',
+      });
+    }
+  }
+
+  // 14. Heavy Insider Selling (Warning severity)
+  if (analysis.insiderActivity) {
+    const { netSharesBought90d, sellShares90d, buyShares90d } = analysis.insiderActivity;
+    if (netSharesBought90d != null && netSharesBought90d < -500000) {
+      const sellAmount = sellShares90d || 0;
+      const buyAmount = buyShares90d || 0;
+      const totalActivity = buyAmount + sellAmount;
+      const sellRatio = totalActivity > 0 ? sellAmount / totalActivity : 0;
+      if (sellRatio >= 0.8) {
+        flags.push({
+          id: 'heavy-insider-selling',
+          title: 'Heavy Insider Selling',
+          message: `Insiders sold a net of ${fmtLargeNum(Math.abs(netSharesBought90d))} shares in the last 90 days (representing ${Math.round(sellRatio * 100)}% of total insider trades).`,
+          severity: 'warning',
+          metric: 'Net Insider Activity',
+          currentValue: `${fmtLargeNum(netSharesBought90d)} shares`,
+          threshold: '≥ -500K shares',
+        });
+      }
+    }
+  }
+
   // Sort: dangers first, then warnings
   flags.sort((a, b) => {
     if (a.severity === 'danger' && b.severity === 'warning') return -1;

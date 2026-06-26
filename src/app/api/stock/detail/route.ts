@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const [screener, quote, profileSummary] = await Promise.allSettled([
-      runScreenerForSymbol(cleanSymbol, market, 'TA_ONLY'),
+      runScreenerForSymbol(cleanSymbol, market, 'DEFAULT'),
       getStockQuote(cleanSymbol, market),
       yf.quoteSummary(querySymbol, { modules: ['assetProfile'] })
     ]);

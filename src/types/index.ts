@@ -115,6 +115,18 @@ export interface WatchlistItem {
   action: Signal;
   actionReason: string;
   lastUpdated: string;
+  fundamentalScore?: {
+    total: number;             // 0–100
+    grade: 'A' | 'B' | 'C' | 'D' | 'F';
+    valuation: number;         // 0–20
+    growth: number;            // 0–20
+    profitability: number;     // 0–15
+    health: number;            // 0–15
+    cashFlow: number;          // 0–15
+    analyst: number;           // 0–15
+    signals: string[];         // bullish fundamental highlights
+    warnings: string[];        // non-blocking fundamental cautions
+  } | null;
 }
 
 export interface PopularStock {
@@ -221,6 +233,62 @@ export interface SwingScreenerResult {
   isPass: boolean;
   error?: string;
   redFlags?: any[];
+
+  // ── New: Fundamental quality enrichment (populated after red-flag check) ──
+  fundamentalScore?: {
+    total: number;             // 0–100
+    grade: 'A' | 'B' | 'C' | 'D' | 'F';
+    valuation: number;         // 0–20
+    growth: number;            // 0–20
+    profitability: number;     // 0–15
+    health: number;            // 0–15
+    cashFlow: number;          // 0–15
+    analyst: number;           // 0–15
+    signals: string[];         // bullish fundamental highlights
+    warnings: string[];        // non-blocking fundamental cautions
+  } | null;
+
+  // Analyst consensus (surfaced from ComprehensiveAnalysis)
+  analystUpside?: number | null;   // % upside to analyst mean price target
+  analystConsensus?: 'strong_buy' | 'buy' | 'hold' | 'sell' | 'strong_sell' | null;
+  analystTargetPrice?: number | null;
+
+  // Short interest (from defaultKeyStatistics)
+  shortInterestPct?: number | null;    // short % of float (0–100 scale)
+  shortRatioDays?: number | null;      // days-to-cover short ratio
+
+  // EPS estimate revision direction
+  epsRevisionUp?: boolean | null;      // true = recently revised up, false = down
+
+  // Earnings proximity
+  daysToEarnings?: number | null;      // null = no upcoming earnings in next 90 days
+  earningsDate?: string | null;        // ISO date string of next earnings
+
+  // Sector for display
+  sector?: string | null;
+
+  // Insider Activity
+  insiderActivity?: {
+    netSharesBought90d: number | null;
+    buyShares90d: number | null;
+    sellShares90d: number | null;
+  } | null;
+
+  // 52-week relative performance vs S&P 500
+  relativeStrength52W?: number | null;
+  stock52WChange?: number | null;
+
+  // 52W Low & Fibonacci Levels
+  fiftyTwoWeekLow?: number | null;
+  fibonacciLevels?: {
+    high: number;
+    low: number;
+    fib236: number;
+    fib382: number;
+    fib500: number;
+    fib618: number;
+    fib786: number;
+  } | null;
 }
 
 export type { PriceRecommendation } from '@/lib/priceRecommendation';
