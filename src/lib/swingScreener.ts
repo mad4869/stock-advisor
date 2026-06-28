@@ -6,7 +6,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'DETAIL';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -121,6 +121,7 @@ async function runScreenerForSymbolRaw(
       SHORT_SQUEEZE: 60,
       MA_TREND: 60,
       TA_ONLY: 0, // not used as a gate for this preset
+      DETAIL: 0,  // not used as a gate for this preset
     };
     const accThreshold = accThresholdMap[preset];
     const accumulation = computeAccumulation(history, accThreshold);
@@ -129,8 +130,8 @@ async function runScreenerForSymbolRaw(
     // Early exit: if not accumulating, skip full TA computation.
     // This is both architecturally correct (follow smart money first)
     // and a performance optimization for large universes.
-    // Exception: TA_ONLY preset ignores the smart money gate entirely.
-    if (!accumulation.isAccumulating && preset !== 'TA_ONLY') {
+    // Exception: TA_ONLY and DETAIL presets ignore the smart money gate entirely.
+    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL') {
       result.isPass = false;
       return result;
     }
@@ -149,13 +150,13 @@ async function runScreenerForSymbolRaw(
       return result;
     }
 
-    // Absolute volume floor check
-    if (ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
+    // Absolute volume floor check — skipped for DETAIL preset so the stock
+    // detail page always receives full TA data regardless of liquidity.
+    result.taData = ta;
+    if (preset !== 'DETAIL' && ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
       result.error = 'Insufficient liquidity';
       return result;
     }
-    
-    result.taData = ta;
 
     // ──────────────────────────────────────────────
     // STEP 4: Score TA and Evaluate Presets
@@ -326,6 +327,12 @@ async function runScreenerForSymbolRaw(
       // Only stocks with an elite TA score of 90+ pass.
       taPass = totalTaScore >= 90;
       if (taPass) signals.push('Elite TA Score (90+)');
+    }
+    else if (preset === 'DETAIL') {
+      // Detail page view — bypasses all screener gates.
+      // TA score and data are always computed and returned for display;
+      // this preset never sets isPass = true since it is not a filter.
+      taPass = false;
     }
 
     if (taPass) {
