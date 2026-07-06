@@ -89,6 +89,29 @@ async function runScreenerForSymbolRaw(
         interval: '1d'
       });
       history = chartData.quotes;
+      if (history && history.length > 0 && chartData?.meta?.regularMarketPrice > 0) {
+        const livePrice = chartData.meta.regularMarketPrice;
+        const lastQuote = history[history.length - 1];
+        if (lastQuote && lastQuote.close !== livePrice) {
+          const lastDate = new Date(lastQuote.date);
+          const today = new Date();
+          if (lastDate.toDateString() === today.toDateString()) {
+            lastQuote.close = livePrice;
+            if (livePrice > lastQuote.high) lastQuote.high = livePrice;
+            if (livePrice < lastQuote.low) lastQuote.low = livePrice;
+            if (chartData.meta.regularMarketVolume) lastQuote.volume = chartData.meta.regularMarketVolume;
+          } else if (today.getTime() - lastDate.getTime() > 0) {
+            history.push({
+              date: today.toISOString(),
+              open: chartData.meta.regularMarketOpen ?? livePrice,
+              high: chartData.meta.regularMarketDayHigh ?? Math.max(lastQuote.close, livePrice),
+              low: chartData.meta.regularMarketDayLow ?? Math.min(lastQuote.close, livePrice),
+              close: livePrice,
+              volume: chartData.meta.regularMarketVolume ?? 0,
+            });
+          }
+        }
+      }
       if (history && history.length > 0) {
         historyCache.set(historyCacheKey, history, CACHE_TTL.HISTORICAL);
       }

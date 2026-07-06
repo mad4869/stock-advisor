@@ -272,192 +272,209 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
               )}
 
               {/* Detailed Indicators */}
-              {screener.taData && (
-                <div className="space-y-6">
-                  {/* MA Alignment */}
-                  <div className="card">
-                    <h3 className="text-lg font-bold text-white mb-1">Moving Average Alignment</h3>
-                    <p className="text-xs text-gray-500 mb-5">Price vs. each moving average — green means price is above, red means below.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* EMA block */}
-                      <div className="bg-dark-800 rounded-xl border border-dark-600 p-4">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Exponential MA (EMA)</p>
-                        <div className="space-y-2">
-                          {([
-                            { label: 'EMA 20', value: screener.taData.ema20 },
-                            { label: 'EMA 50', value: screener.taData.ema50 },
-                            { label: 'EMA 200', value: screener.taData.ema200 },
-                          ] as { label: string; value: number | null }[]).map(({ label, value }) => {
-                            const above = value != null && screener.taData.close > value;
-                            const available = value != null;
-                            return (
-                              <div key={label} className="flex items-center justify-between text-sm">
-                                <span className="text-gray-400">{label}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-gray-500 text-xs">{available ? value.toFixed(2) : '—'}</span>
-                                  {available ? (
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${above ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                                      {above ? '▲ Above' : '▼ Below'}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-gray-600">N/A</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {/* Summary badge */}
-                        {(() => {
-                          const price = screener.taData.close;
-                          const allAbove = [screener.taData.ema20, screener.taData.ema50, screener.taData.ema200].every(v => v != null && price > v);
-                          const noneNull = [screener.taData.ema20, screener.taData.ema50, screener.taData.ema200].every(v => v != null);
-                          if (!noneNull) return null;
-                          return (
-                            <div className={`mt-3 pt-3 border-t border-dark-600 text-center text-xs font-semibold ${allAbove ? 'text-green-400' : 'text-yellow-400'}`}>
-                              {allAbove ? '✓ Price above all EMAs' : '✗ Not above all EMAs'}
-                            </div>
-                          );
-                        })()}
-                      </div>
+              {screener.taData && (() => {
+                const currentPrice = quote?.price ?? screener.taData.close;
+                const fibLevels = screener.taData.fibonacciLevels ? [
+                  { name: '23.6% Level', value: screener.taData.fibonacciLevels.fib236 },
+                  { name: '38.2% Level', value: screener.taData.fibonacciLevels.fib382 },
+                  { name: '50.0% Level', value: screener.taData.fibonacciLevels.fib500 },
+                  { name: '61.8% Level', value: screener.taData.fibonacciLevels.fib618 },
+                  { name: '78.6% Level', value: screener.taData.fibonacciLevels.fib786 },
+                ] : [];
+                const resistances = fibLevels.filter(l => l.value >= currentPrice).sort((a, b) => a.value - b.value);
+                const supports = fibLevels.filter(l => l.value < currentPrice).sort((a, b) => b.value - a.value);
+                const nearestRes = resistances.length > 0 ? resistances[0].name : null;
+                const nearestSup = supports.length > 0 ? supports[0].name : null;
 
-                      {/* SMA block */}
-                      <div className="bg-dark-800 rounded-xl border border-dark-600 p-4">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Simple MA (SMA)</p>
-                        <div className="space-y-2">
-                          {([
-                            { label: 'SMA 20', value: screener.taData.sma20 },
-                            { label: 'SMA 50', value: screener.taData.sma50 },
-                            { label: 'SMA 200', value: screener.taData.sma200 },
-                          ] as { label: string; value: number | null }[]).map(({ label, value }) => {
-                            const above = value != null && screener.taData.close > value;
-                            const available = value != null;
-                            return (
-                              <div key={label} className="flex items-center justify-between text-sm">
-                                <span className="text-gray-400">{label}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-gray-500 text-xs">{available ? value.toFixed(2) : '—'}</span>
-                                  {available ? (
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${above ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                                      {above ? '▲ Above' : '▼ Below'}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-gray-600">N/A</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {/* Summary badge */}
-                        {(() => {
-                          const price = screener.taData.close;
-                          const allAbove = [screener.taData.sma20, screener.taData.sma50, screener.taData.sma200].every(v => v != null && price > v);
-                          const noneNull = [screener.taData.sma20, screener.taData.sma50, screener.taData.sma200].every(v => v != null);
-                          if (!noneNull) return null;
-                          return (
-                            <div className={`mt-3 pt-3 border-t border-dark-600 text-center text-xs font-semibold ${allAbove ? 'text-green-400' : 'text-yellow-400'}`}>
-                              {allAbove ? '✓ Price above all SMAs' : '✗ Not above all SMAs'}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Technical Indicators Breakdown */}
-                  <div className="card">
-                    <h3 className="text-lg font-bold text-white mb-6">Technical Indicators Breakdown</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <MetricBox label="RSI (14)" value={screener.taData.rsi?.toFixed(2)} subtext={getRSILabel(screener.taData.rsi)} />
-                      <MetricBox label="MACD Hist" value={screener.taData.macdHistogram?.toFixed(3)} subtext={getMACDLabel(screener.taData.macdHistogram)} />
-                      <MetricBox label="ADX (14)" value={screener.taData.adx?.toFixed(2)} subtext={getADXLabel(screener.taData.adx)} />
-                      <MetricBox label="CCI (20)" value={screener.taData.cci?.toFixed(2)} subtext={getCCILabel(screener.taData.cci)} />
-
-                      <MetricBox label="Bollinger %B" value={screener.taData.bollingerB?.toFixed(2)} subtext={getBBLabel(screener.taData.bollingerB)} />
-                      <MetricBox label="ATR %" value={screener.taData.atrPercent ? `${screener.taData.atrPercent.toFixed(2)}%` : '-'} subtext={getATRLabel(screener.taData.atrPercent)} />
-                      <MetricBox label="Vol Ratio (20d)" value={screener.taData.volumeRatio ? `${screener.taData.volumeRatio.toFixed(2)}x` : '-'} subtext={getVolLabel(screener.taData.volumeRatio)} />
-                      <MetricBox label="MFI (14)" value={screener.taData.mfi?.toFixed(2)} subtext={getRSILabel(screener.taData.mfi)} />
-
-                      {/* NEW Indicators */}
-                      <MetricBox 
-                        label="VWAP (20d)" 
-                        value={screener.taData.vwap?.toFixed(2)} 
-                        subtext={screener.taData.vwap != null ? (screener.taData.close > screener.taData.vwap ? { text: 'Bullish (Above)', color: 'text-green-400' } : { text: 'Bearish (Below)', color: 'text-red-400' }) : undefined}
-                      />
-                      <MetricBox label="Williams %R (14)" value={screener.taData.williamsR?.toFixed(2)} subtext={getWilliamsRLabel(screener.taData.williamsR)} />
-                      <MetricBox 
-                        label="Parabolic SAR" 
-                        value={screener.taData.psar?.toFixed(2)} 
-                        subtext={screener.taData.psar && screener.taData.close > screener.taData.psar ? { text: 'Bullish (Above)', color: 'text-green-400' } : { text: 'Bearish (Below)', color: 'text-red-400' }} 
-                      />
-                      <MetricBox 
-                        label="ADX Directional" 
-                        value={screener.taData.plusDi != null && screener.taData.minusDi != null ? `+DI ${screener.taData.plusDi.toFixed(1)} / -DI ${screener.taData.minusDi.toFixed(1)}` : '-'} 
-                        subtext={screener.taData.plusDi != null && screener.taData.minusDi != null ? (screener.taData.plusDi > screener.taData.minusDi ? { text: 'Bullish (+DI > -DI)', color: 'text-green-400' } : { text: 'Bearish (-DI > +DI)', color: 'text-red-400' }) : undefined} 
-                      />
-                      <MetricBox 
-                        label="Ichimoku Conversion" 
-                        value={screener.taData.tenkanSen != null ? `Tenkan: ${screener.taData.tenkanSen.toFixed(2)}` : '-'} 
-                        subtext={screener.taData.tenkanSen != null && screener.taData.kijunSen != null ? (screener.taData.tenkanSen > screener.taData.kijunSen ? { text: 'Bullish > Kijun', color: 'text-green-400' } : { text: 'Bearish < Kijun', color: 'text-red-400' }) : undefined}
-                      />
-                      <MetricBox 
-                        label="Ichimoku Base" 
-                        value={screener.taData.kijunSen != null ? `Kijun: ${screener.taData.kijunSen.toFixed(2)}` : '-'} 
-                      />
-                      <MetricBox 
-                        label="Ichimoku Span A" 
-                        value={screener.taData.senkouSpanA != null ? `Span A: ${screener.taData.senkouSpanA.toFixed(2)}` : '-'} 
-                        subtext={screener.taData.senkouSpanA != null && screener.taData.senkouSpanB != null ? (screener.taData.senkouSpanA > screener.taData.senkouSpanB ? { text: 'Bullish Cloud', color: 'text-green-400' } : { text: 'Bearish Cloud', color: 'text-red-400' }) : undefined}
-                      />
-                      <MetricBox 
-                        label="Ichimoku Span B" 
-                        value={screener.taData.senkouSpanB != null ? `Span B: ${screener.taData.senkouSpanB.toFixed(2)}` : '-'} 
-                      />
-                    </div>
-                  </div>
-
-                  {/* Fibonacci Retracement Levels */}
-                  {screener.taData.fibonacciLevels && (
+                return (
+                  <div className="space-y-6">
+                    {/* MA Alignment */}
                     <div className="card">
-                      <h3 className="text-lg font-bold text-white mb-2">Fibonacci Retracement Levels (52W)</h3>
-                      <p className="text-xs text-gray-500 mb-3">Levels based on 52-week High ({market === 'ID' ? 'Rp' : '$'}{screener.taData.fibonacciLevels.high.toLocaleString()}) and 52-week Low ({market === 'ID' ? 'Rp' : '$'}{screener.taData.fibonacciLevels.low.toLocaleString()}).</p>
-                      
-                      <p className="text-xs text-gray-400 mb-4 bg-dark-800 p-3 rounded-lg border border-dark-600 leading-relaxed">
-                        💡 <strong>How to use:</strong> Fibonacci retracement levels act as key support and resistance areas. 
-                        When the stock is in an uptrend, pullbacks to support levels (especially 38.2%, 50.0%, and 61.8%) 
-                        often act as high-probability buy zones. Resistance levels represent potential targets or sell zones.
-                      </p>
+                      <h3 className="text-lg font-bold text-white mb-1">Moving Average Alignment</h3>
+                      <p className="text-xs text-gray-500 mb-5">Price vs. each moving average — green means price is above, red means below.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* EMA block */}
+                        <div className="bg-dark-800 rounded-xl border border-dark-600 p-4">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Exponential MA (EMA)</p>
+                          <div className="space-y-2">
+                            {([
+                              { label: 'EMA 20', value: screener.taData.ema20 },
+                              { label: 'EMA 50', value: screener.taData.ema50 },
+                              { label: 'EMA 200', value: screener.taData.ema200 },
+                            ] as { label: string; value: number | null }[]).map(({ label, value }) => {
+                              const above = value != null && currentPrice > value;
+                              const available = value != null;
+                              return (
+                                <div key={label} className="flex items-center justify-between text-sm">
+                                  <span className="text-gray-400">{label}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-gray-500 text-xs">{available ? value.toFixed(2) : '—'}</span>
+                                    {available ? (
+                                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${above ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                        {above ? '▲ Above' : '▼ Below'}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-gray-600">N/A</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Summary badge */}
+                          {(() => {
+                            const price = currentPrice;
+                            const allAbove = [screener.taData.ema20, screener.taData.ema50, screener.taData.ema200].every(v => v != null && price > v);
+                            const noneNull = [screener.taData.ema20, screener.taData.ema50, screener.taData.ema200].every(v => v != null);
+                            if (!noneNull) return null;
+                            return (
+                              <div className={`mt-3 pt-3 border-t border-dark-600 text-center text-xs font-semibold ${allAbove ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {allAbove ? '✓ Price above all EMAs' : '✗ Not above all EMAs'}
+                              </div>
+                            );
+                          })()}
+                        </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-                        {[
-                          { name: '23.6% Level', value: screener.taData.fibonacciLevels.fib236 },
-                          { name: '38.2% Level', value: screener.taData.fibonacciLevels.fib382 },
-                          { name: '50.0% Level', value: screener.taData.fibonacciLevels.fib500 },
-                          { name: '61.8% Level', value: screener.taData.fibonacciLevels.fib618 },
-                          { name: '78.6% Level', value: screener.taData.fibonacciLevels.fib786 },
-                        ].map((lvl) => {
-                          const dist = Math.abs((screener.taData.close - lvl.value) / lvl.value) * 100;
-                          const isClosest = dist < 2; // within 2%
-                          const isSupport = screener.taData.close > lvl.value;
-                          return (
-                            <div key={lvl.name} className={`p-3 rounded-lg border transition-all ${isClosest ? 'bg-blue-600/10 border-blue-500 text-blue-300 font-bold' : 'bg-dark-800 border-dark-600 text-gray-300'}`}>
-                              <div className="text-gray-500 mb-1">{lvl.name}</div>
-                              <div className="text-sm text-white mb-1">
-                                {market === 'ID' ? 'Rp' : '$'}{lvl.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        {/* SMA block */}
+                        <div className="bg-dark-800 rounded-xl border border-dark-600 p-4">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Simple MA (SMA)</p>
+                          <div className="space-y-2">
+                            {([
+                              { label: 'SMA 20', value: screener.taData.sma20 },
+                              { label: 'SMA 50', value: screener.taData.sma50 },
+                              { label: 'SMA 200', value: screener.taData.sma200 },
+                            ] as { label: string; value: number | null }[]).map(({ label, value }) => {
+                              const above = value != null && currentPrice > value;
+                              const available = value != null;
+                              return (
+                                <div key={label} className="flex items-center justify-between text-sm">
+                                  <span className="text-gray-400">{label}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-gray-500 text-xs">{available ? value.toFixed(2) : '—'}</span>
+                                    {available ? (
+                                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${above ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                        {above ? '▲ Above' : '▼ Below'}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-gray-600">N/A</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Summary badge */}
+                          {(() => {
+                            const price = currentPrice;
+                            const allAbove = [screener.taData.sma20, screener.taData.sma50, screener.taData.sma200].every(v => v != null && price > v);
+                            const noneNull = [screener.taData.sma20, screener.taData.sma50, screener.taData.sma200].every(v => v != null);
+                            if (!noneNull) return null;
+                            return (
+                              <div className={`mt-3 pt-3 border-t border-dark-600 text-center text-xs font-semibold ${allAbove ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {allAbove ? '✓ Price above all SMAs' : '✗ Not above all SMAs'}
                               </div>
-                              <div className={`text-[10px] font-semibold uppercase mt-1 ${isSupport ? 'text-green-400' : 'text-red-400'}`}>
-                                {isSupport ? 'Support' : 'Resistance'}
-                              </div>
-                              {isClosest && <div className="text-[9px] text-blue-400 font-bold uppercase mt-0.5">★ Nearest Level</div>}
-                            </div>
-                          );
-                        })}
+                            );
+                          })()}
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {/* Technical Indicators Breakdown */}
+                    <div className="card">
+                      <h3 className="text-lg font-bold text-white mb-6">Technical Indicators Breakdown</h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <MetricBox label="RSI (14)" value={screener.taData.rsi?.toFixed(2)} subtext={getRSILabel(screener.taData.rsi)} />
+                        <MetricBox label="MACD Hist" value={screener.taData.macdHistogram?.toFixed(3)} subtext={getMACDLabel(screener.taData.macdHistogram)} />
+                        <MetricBox label="ADX (14)" value={screener.taData.adx?.toFixed(2)} subtext={getADXLabel(screener.taData.adx)} />
+                        <MetricBox label="CCI (20)" value={screener.taData.cci?.toFixed(2)} subtext={getCCILabel(screener.taData.cci)} />
+
+                        <MetricBox label="Bollinger %B" value={screener.taData.bollingerB?.toFixed(2)} subtext={getBBLabel(screener.taData.bollingerB)} />
+                        <MetricBox label="ATR %" value={screener.taData.atrPercent ? `${screener.taData.atrPercent.toFixed(2)}%` : '-'} subtext={getATRLabel(screener.taData.atrPercent)} />
+                        <MetricBox label="Vol Ratio (20d)" value={screener.taData.volumeRatio ? `${screener.taData.volumeRatio.toFixed(2)}x` : '-'} subtext={getVolLabel(screener.taData.volumeRatio)} />
+                        <MetricBox label="MFI (14)" value={screener.taData.mfi?.toFixed(2)} subtext={getRSILabel(screener.taData.mfi)} />
+
+                        {/* NEW Indicators */}
+                        <MetricBox 
+                          label="VWAP (20d)" 
+                          value={screener.taData.vwap?.toFixed(2)} 
+                          subtext={screener.taData.vwap != null ? (currentPrice > screener.taData.vwap ? { text: 'Bullish (Above)', color: 'text-green-400' } : { text: 'Bearish (Below)', color: 'text-red-400' }) : undefined}
+                        />
+                        <MetricBox label="Williams %R (14)" value={screener.taData.williamsR?.toFixed(2)} subtext={getWilliamsRLabel(screener.taData.williamsR)} />
+                        <MetricBox 
+                          label="Parabolic SAR" 
+                          value={screener.taData.psar?.toFixed(2)} 
+                          subtext={screener.taData.psar && currentPrice > screener.taData.psar ? { text: 'Bullish (Above)', color: 'text-green-400' } : { text: 'Bearish (Below)', color: 'text-red-400' }} 
+                        />
+                        <MetricBox 
+                          label="ADX Directional" 
+                          value={screener.taData.plusDi != null && screener.taData.minusDi != null ? `+DI ${screener.taData.plusDi.toFixed(1)} / -DI ${screener.taData.minusDi.toFixed(1)}` : '-'} 
+                          subtext={screener.taData.plusDi != null && screener.taData.minusDi != null ? (screener.taData.plusDi > screener.taData.minusDi ? { text: 'Bullish (+DI > -DI)', color: 'text-green-400' } : { text: 'Bearish (-DI > +DI)', color: 'text-red-400' }) : undefined} 
+                        />
+                        <MetricBox 
+                          label="Ichimoku Conversion" 
+                          value={screener.taData.tenkanSen != null ? `Tenkan: ${screener.taData.tenkanSen.toFixed(2)}` : '-'} 
+                          subtext={screener.taData.tenkanSen != null && screener.taData.kijunSen != null ? (screener.taData.tenkanSen > screener.taData.kijunSen ? { text: 'Bullish > Kijun', color: 'text-green-400' } : { text: 'Bearish < Kijun', color: 'text-red-400' }) : undefined}
+                        />
+                        <MetricBox 
+                          label="Ichimoku Base" 
+                          value={screener.taData.kijunSen != null ? `Kijun: ${screener.taData.kijunSen.toFixed(2)}` : '-'} 
+                        />
+                        <MetricBox 
+                          label="Ichimoku Span A" 
+                          value={screener.taData.senkouSpanA != null ? `Span A: ${screener.taData.senkouSpanA.toFixed(2)}` : '-'} 
+                          subtext={screener.taData.senkouSpanA != null && screener.taData.senkouSpanB != null ? (screener.taData.senkouSpanA > screener.taData.senkouSpanB ? { text: 'Bullish Cloud', color: 'text-green-400' } : { text: 'Bearish Cloud', color: 'text-red-400' }) : undefined}
+                        />
+                        <MetricBox 
+                          label="Ichimoku Span B" 
+                          value={screener.taData.senkouSpanB != null ? `Span B: ${screener.taData.senkouSpanB.toFixed(2)}` : '-'} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Fibonacci Retracement Levels */}
+                    {screener.taData.fibonacciLevels && (
+                      <div className="card">
+                        <h3 className="text-lg font-bold text-white mb-2">Fibonacci Retracement Levels (52W)</h3>
+                        <p className="text-xs text-gray-500 mb-3">Levels based on 52-week High ({market === 'ID' ? 'Rp' : '$'}{screener.taData.fibonacciLevels.high.toLocaleString()}) and 52-week Low ({market === 'ID' ? 'Rp' : '$'}{screener.taData.fibonacciLevels.low.toLocaleString()}).</p>
+                        
+                        <p className="text-xs text-gray-400 mb-4 bg-dark-800 p-3 rounded-lg border border-dark-600 leading-relaxed">
+                          💡 <strong>How to use:</strong> Fibonacci retracement levels act as key support and resistance areas. 
+                          When the stock is in an uptrend, pullbacks to support levels (especially 38.2%, 50.0%, and 61.8%) 
+                          often act as high-probability buy zones. Resistance levels represent potential targets or sell zones.
+                        </p>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                          {fibLevels.map((lvl) => {
+                            const dist = Math.abs((currentPrice - lvl.value) / lvl.value) * 100;
+                            const isClosest = dist < 2; // within 2%
+                            const isSupport = currentPrice > lvl.value;
+                            const isNearestRes = lvl.name === nearestRes;
+                            const isNearestSup = lvl.name === nearestSup;
+                            return (
+                              <div key={lvl.name} className={`p-3 rounded-lg border transition-all ${isClosest ? 'bg-blue-600/10 border-blue-500 text-blue-300 font-bold' : isNearestRes ? 'bg-yellow-500/10 border-yellow-500/50 text-yellow-300' : isNearestSup ? 'bg-green-500/10 border-green-500/50 text-green-300' : 'bg-dark-800 border-dark-600 text-gray-300'}`}>
+                                <div className="text-gray-500 mb-1">{lvl.name}</div>
+                                <div className="text-sm text-white mb-1">
+                                  {market === 'ID' ? 'Rp' : '$'}{lvl.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </div>
+                                <div className={`text-[10px] font-semibold uppercase mt-1 ${isSupport ? 'text-green-400' : 'text-red-400'}`}>
+                                  {isSupport ? 'Support' : 'Resistance'}
+                                </div>
+                                {isClosest ? (
+                                  <div className="text-[9px] text-blue-400 font-bold uppercase mt-0.5">★ Testing Level</div>
+                                ) : isNearestRes ? (
+                                  <div className="text-[9px] text-yellow-400 font-bold uppercase mt-0.5">★ Next Resistance</div>
+                                ) : isNearestSup ? (
+                                  <div className="text-[9px] text-green-400 font-bold uppercase mt-0.5">★ Nearest Support</div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </>
           )}
         </>

@@ -216,6 +216,31 @@ async function getYahooHistorical(
     throw new Error(`Empty historical data for ${ySymbol}`);
   }
 
+  const livePrice = result.meta?.regularMarketPrice;
+  if (livePrice && livePrice > 0) {
+    const roundFn = (v: number) => market === 'ID' ? Math.round(v) : Math.round(v * 100) / 100;
+    const roundedLive = roundFn(livePrice);
+    const lastQuote = historicalData[historicalData.length - 1];
+    if (lastQuote && lastQuote.close !== roundedLive) {
+      const today = new Date();
+      if (lastQuote.date.toDateString() === today.toDateString()) {
+        lastQuote.close = roundedLive;
+        if (roundedLive > lastQuote.high) lastQuote.high = roundedLive;
+        if (roundedLive < lastQuote.low) lastQuote.low = roundedLive;
+        if (result.meta.regularMarketVolume) lastQuote.volume = result.meta.regularMarketVolume;
+      } else if (today.getTime() - lastQuote.date.getTime() > 0) {
+        historicalData.push({
+          date: today,
+          open: roundFn(result.meta.regularMarketOpen ?? livePrice),
+          high: roundFn(result.meta.regularMarketDayHigh ?? Math.max(lastQuote.close, livePrice)),
+          low: roundFn(result.meta.regularMarketDayLow ?? Math.min(lastQuote.close, livePrice)),
+          close: roundedLive,
+          volume: result.meta.regularMarketVolume ?? 0,
+        });
+      }
+    }
+  }
+
   return historicalData;
 }
 

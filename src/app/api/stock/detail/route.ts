@@ -50,6 +50,29 @@ export async function GET(request: NextRequest) {
           interval: '1d'
         });
         history = chartData.quotes;
+        if (history && history.length > 0 && chartData?.meta?.regularMarketPrice > 0) {
+          const livePrice = chartData.meta.regularMarketPrice;
+          const lastQuote = history[history.length - 1];
+          if (lastQuote && lastQuote.close !== livePrice) {
+            const lastDate = new Date(lastQuote.date);
+            const today = new Date();
+            if (lastDate.toDateString() === today.toDateString()) {
+              lastQuote.close = livePrice;
+              if (livePrice > lastQuote.high) lastQuote.high = livePrice;
+              if (livePrice < lastQuote.low) lastQuote.low = livePrice;
+              if (chartData.meta.regularMarketVolume) lastQuote.volume = chartData.meta.regularMarketVolume;
+            } else if (today.getTime() - lastDate.getTime() > 0) {
+              history.push({
+                date: today.toISOString(),
+                open: chartData.meta.regularMarketOpen ?? livePrice,
+                high: chartData.meta.regularMarketDayHigh ?? Math.max(lastQuote.close, livePrice),
+                low: chartData.meta.regularMarketDayLow ?? Math.min(lastQuote.close, livePrice),
+                close: livePrice,
+                volume: chartData.meta.regularMarketVolume ?? 0,
+              });
+            }
+          }
+        }
         if (history && history.length > 0) {
           historyCache.set(historyCacheKey, history, CACHE_TTL.HISTORICAL);
         }
@@ -58,6 +81,9 @@ export async function GET(request: NextRequest) {
       if (history && history.length >= 50) {
         const ta = calculateTA(history, market);
         if (ta) {
+          if (quote.status === 'fulfilled' && quote.value?.price > 0) {
+            ta.close = quote.value.price;
+          }
           priceRecommendation = calculatePriceRecommendation(ta, history, market);
         }
       }
@@ -65,9 +91,16 @@ export async function GET(request: NextRequest) {
       console.warn(`[Detail API] Failed to compute price recommendation for ${cleanSymbol}: ${err.message}`);
     }
 
+    const screenerVal = screener.status === 'fulfilled' ? screener.value : null;
+    const quoteVal = quote.status === 'fulfilled' ? quote.value : null;
+
+    if (screenerVal && screenerVal.taData && quoteVal && quoteVal.price > 0) {
+      screenerVal.taData.close = quoteVal.price;
+    }
+
     const result = {
-      screener: screener.status === 'fulfilled' ? screener.value : null,
-      quote: quote.status === 'fulfilled' ? quote.value : null,
+      screener: screenerVal,
+      quote: quoteVal,
       profile: profileSummary.status === 'fulfilled' ? profileSummary.value.assetProfile : null,
       priceRecommendation,
       errors: {

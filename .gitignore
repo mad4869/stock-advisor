@@ -8,3 +8,4 @@ tsconfig.tsbuildinfo
 dist/
 build/
 coverage/
+.env*
