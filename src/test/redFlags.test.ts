@@ -166,6 +166,32 @@ function createMockAnalysis(overrides: Partial<ComprehensiveAnalysis> = {}): Com
     fcfYield: 1.2,
     interestCoverage: 7.2,
     debtToEbitda: 2.5,
+    shortInterest: {
+      shortPercentOfFloat: null,
+      shortRatio: null,
+      sharesShort: null,
+      sharesShortPriorMonth: null,
+      shortInterestRising: null,
+    },
+    epsRevision: {
+      epsRevisionUp: null,
+      currentEstimate: null,
+      thirtyDayAgoEstimate: null,
+      revisionPercent: null,
+    },
+    earningsCalendar: {
+      nextEarningsDate: null,
+      daysToEarnings: null,
+      isEarningsImminent: false,
+    },
+    upgradeDowngrades: {
+      upgradeCount30d: 0,
+      downgradeCount30d: 0,
+      netScore: 0,
+      recentActions: [],
+    },
+    relativeStrength52W: null,
+    stock52WChange: null,
     ...overrides,
   };
 }

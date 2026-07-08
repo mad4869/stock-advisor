@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import StockSearch from '@/components/StockSearch';
+import MacroDashboard from '@/components/MacroDashboard';
 import {
   Calculator,
   Eye,
@@ -49,6 +50,11 @@ export default function HomePage() {
             placeholder="Search any US or Indonesian stock..."
           />
         </div>
+      </section>
+
+      {/* Global Macro & Market Conditions */}
+      <section>
+        <MacroDashboard />
       </section>
 
       {/* Feature Cards */}
