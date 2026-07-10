@@ -79,10 +79,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filter to only passing stocks, sort by TA score descending
+    // Filter to only passing stocks, sort by Smart Money, then TA, then Fundamental
     const passingStocks = allResults
       .filter(r => r.isPass && !r.error)
-      .sort((a, b) => b.taScore - a.taScore);
+      .sort((a, b) => {
+        // 1. Sort by Smart Money (Accumulation Score)
+        const aSmart = a.smartMoney?.accumulationScore || 0;
+        const bSmart = b.smartMoney?.accumulationScore || 0;
+        if (bSmart !== aSmart) return bSmart - aSmart;
+
+        // 2. Sort by TA Score
+        if (b.taScore !== a.taScore) return b.taScore - a.taScore;
+
+        // 3. Sort by Fundamental Score
+        const aFund = a.fundamentalScore?.total || 0;
+        const bFund = b.fundamentalScore?.total || 0;
+        return bFund - aFund;
+      });
 
     const responseData = {
       results: passingStocks,
