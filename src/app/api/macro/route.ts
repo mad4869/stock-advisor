@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { yf } from '@/lib/yahooFinance2';
 import { macroCache, CACHE_TTL } from '@/lib/cache';
 
+export const dynamic = 'force-dynamic';
+
 export type MacroCategory = 'indices' | 'sentiment' | 'commodities' | 'rates' | 'crypto';
 
 export interface MacroIndicator {
