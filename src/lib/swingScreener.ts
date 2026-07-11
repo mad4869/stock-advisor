@@ -6,7 +6,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'DETAIL';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'DETAIL';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -143,6 +143,7 @@ async function runScreenerForSymbolRaw(
       OVERSOLD: 40,
       SHORT_SQUEEZE: 60,
       MA_TREND: 60,
+      STEALTH_ACCUM: 40, // lenient — we're catching early setups
       TA_ONLY: 0, // not used as a gate for this preset
       DETAIL: 0,  // not used as a gate for this preset
     };
@@ -344,6 +345,54 @@ async function runScreenerForSymbolRaw(
       const allMaAbove = aboveEma20 && aboveEma50 && aboveEma200 && aboveSma20 && aboveSma50 && aboveSma200;
       taPass = taPass && allMaAbove;
       if (taPass) signals.push('Above All MAs (EMA & SMA)');
+    }
+    else if (preset === 'STEALTH_ACCUM') {
+      // Stealth Accumulation — finds stocks where smart money is quietly
+      // building positions but the price has NOT yet moved visibly.
+      // These are early-bird setups *before* BREAKOUT/VOLUME_CLIMAX would fire.
+      //
+      // Conditions (all must pass):
+      //   1. Volume quietly elevated (1.3–2.0x avg) — not a public spike yet
+      //   2. Price has NOT moved up meaningfully (≤ +3% over 10 days)
+      //   3. OBV rising while price is flat/falling (institutional absorption)
+      //   4. CMF positive (≥ 0.05) — intraday closes in upper half of range
+      //   5. Stock still coiled: %B < 0.65 AND RSI 35–60
+      //   6. ADX < 25 — no established trend yet (calm before the storm)
+
+      // 1. Volume elevated but NOT a public breakout yet
+      const volElevated = ta.volumeRatio != null && ta.volumeRatio >= 1.3 && ta.volumeRatio < 2.0;
+
+      // 2. Price flat or only slightly up (≤ +3%) over the last 10 trading days
+      let priceNotMovedYet = false;
+      if (history.length >= 10) {
+        const price10dAgo = history[history.length - 10]?.close;
+        if (price10dAgo && price10dAgo > 0) {
+          const priceChange10d = (price - price10dAgo) / price10dAgo;
+          priceNotMovedYet = priceChange10d <= 0.03; // ≤ +3% over 10 days
+        }
+      }
+
+      // 3. OBV divergence — the key institutional absorption fingerprint
+      const obvDiv = accumulation.obvDivergence;
+
+      // 4. CMF quietly positive (≥ 0.05)
+      const cmfPositive = accumulation.cmf >= 0.05;
+
+      // 5. Stock still coiled — not extended yet
+      const bbCoiled = ta.bollingerB != null ? ta.bollingerB < 0.65 : false;
+      const rsiSweet = ta.rsi != null ? ta.rsi >= 35 && ta.rsi <= 60 : false;
+      const stillCoiled = bbCoiled && rsiSweet;
+
+      // 6. No established trend yet (ADX < 25)
+      const noTrendYet = ta.adx != null ? ta.adx < 25 : true; // if ADX unavailable, allow
+
+      taPass = volElevated && priceNotMovedYet && obvDiv && cmfPositive && stillCoiled && noTrendYet;
+      if (taPass) {
+        signals.push('Stealth Accumulation — Volume Rising, Price Not Yet');
+        if (accumulation.largeBlockBuying) signals.push('Block Buying Detected');
+        signals.push(`CMF: ${accumulation.cmf.toFixed(3)} (Positive Money Flow)`);
+        if (ta.adx) signals.push(`ADX: ${ta.adx.toFixed(1)} — Coiling Phase`);
+      }
     }
     else if (preset === 'TA_ONLY') {
       // Pure TA score gate — no smart money requirement.
