@@ -6,7 +6,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'DETAIL';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'DETAIL';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -144,6 +144,7 @@ async function runScreenerForSymbolRaw(
       SHORT_SQUEEZE: 60,
       MA_TREND: 60,
       STEALTH_ACCUM: 40, // lenient — we're catching early setups
+      BULL_DIV: 40,       // lenient — divergence alone is the primary gate
       TA_ONLY: 0, // not used as a gate for this preset
       DETAIL: 0,  // not used as a gate for this preset
     };
@@ -392,6 +393,29 @@ async function runScreenerForSymbolRaw(
         if (accumulation.largeBlockBuying) signals.push('Block Buying Detected');
         signals.push(`CMF: ${accumulation.cmf.toFixed(3)} (Positive Money Flow)`);
         if (ta.adx) signals.push(`ADX: ${ta.adx.toFixed(1)} — Coiling Phase`);
+      }
+    }
+    else if (preset === 'BULL_DIV') {
+      // RSI Bullish Divergence — price makes lower lows but RSI makes higher lows.
+      // This is a classic hidden-strength reversal signal that fires BEFORE the trend reverses.
+      // The stock must be in a pullback or downtrend phase (RSI not already high).
+      //
+      // Requirements:
+      //   1. RSI divergence detected (lower price low + higher RSI low)
+      //   2. RSI in the sweet spot: not crashed (≥30), not already recovered (≤60)
+      //   3. Some smart money absorption (acc score ≥40 — 2/5 signals)
+      //   4. Stochastic recovering OR MACD histogram increasing (momentum starting to turn)
+
+      const divDetected = ta.rsiDivergence;
+      const rsiInRange = ta.rsi != null ? ta.rsi >= 30 && ta.rsi <= 62 : false;
+      const momentumTurning = ta.stochRecovery || ta.macdIncreasing;
+
+      taPass = divDetected && rsiInRange && momentumTurning;
+      if (taPass) {
+        signals.push('RSI Bullish Divergence — Price Lower Low, RSI Higher Low');
+        if (ta.stochRecovery) signals.push('Stochastic Oversold Recovery');
+        if (ta.macdIncreasing) signals.push('MACD Histogram Rising');
+        if (accumulation.obvDivergence) signals.push('OBV Divergence Confirms');
       }
     }
     else if (preset === 'TA_ONLY') {

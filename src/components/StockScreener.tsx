@@ -5,7 +5,7 @@ import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Market, SwingScreenerResult } from '@/types';
 
-type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM';
+type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV';
 
 export default function StockScreener() {
   const router = useRouter();
@@ -202,6 +202,7 @@ export default function StockScreener() {
           >
             <option value="DEFAULT">Default (Smart Money → TA)</option>
             <option value="STEALTH_ACCUM">🔍 Stealth Accumulation (Volume Up, Price Not Yet)</option>
+            <option value="BULL_DIV">📈 Bull Divergence (RSI Hidden Strength)</option>
             <option value="BREAKOUT">Breakout (Accumulation + Breakout TA)</option>
             <option value="OVERSOLD">Oversold Recovery (Accumulation + Bounce)</option>
             <option value="SMART_MONEY">Strong Smart Money (3+ Signals)</option>

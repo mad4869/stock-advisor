@@ -37,6 +37,7 @@ export interface TAData {
 
   // Momentum
   rsi: number | null;
+  rsiDivergence: boolean;   // bullish: price lower low, RSI higher low
   stochK: number | null;
   stochD: number | null;
   stochRecovery: boolean;
@@ -197,8 +198,44 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     supertrendBullish = inUptrend;
   }
 
-  // RSI
-  const rsi = getLast(RSI.calculate({ values: closes, period: 14 }));
+  // RSI — compute full series for divergence detection
+  const rsiSeries = RSI.calculate({ values: closes, period: 14 });
+  const rsi = rsiSeries.length > 0 ? rsiSeries[rsiSeries.length - 1] : null;
+
+  // RSI Bullish Divergence:
+  // Price makes a lower low, but RSI makes a higher low → hidden strength / reversal setup.
+  // Algorithm: find two most recent swing lows in price (within last 60 bars),
+  // compare corresponding RSI values.
+  const rsiDivergence = (() => {
+    const lookback = Math.min(60, closes.length);
+    const priceSlice = closes.slice(-lookback);
+    // Align RSI series to close prices (RSI has 14-bar warmup)
+    const rsiPad = new Array(closes.length - rsiSeries.length).fill(null).concat(rsiSeries);
+    const rsiSlice = rsiPad.slice(-lookback);
+
+    // Collect swing lows: local minimum over a ±3 bar window
+    const swingLows: { idx: number; price: number; rsiVal: number }[] = [];
+    for (let i = 3; i < priceSlice.length - 3; i++) {
+      const p = priceSlice[i];
+      const isLow =
+        p <= priceSlice[i - 1] && p <= priceSlice[i - 2] && p <= priceSlice[i - 3] &&
+        p <= priceSlice[i + 1] && p <= priceSlice[i + 2] && p <= priceSlice[i + 3];
+      const rsiVal = rsiSlice[i];
+      if (isLow && rsiVal != null) {
+        swingLows.push({ idx: i, price: p, rsiVal });
+      }
+    }
+
+    if (swingLows.length < 2) return false;
+
+    // Two most recent swing lows at least 5 bars apart
+    const prev = swingLows[swingLows.length - 2];
+    const recent = swingLows[swingLows.length - 1];
+    if (recent.idx - prev.idx < 5) return false;
+
+    // Bull divergence: price lower low AND RSI higher low (with ≥2pt buffer to filter noise)
+    return recent.price < prev.price && recent.rsiVal > prev.rsiVal + 2;
+  })();
 
   // Stochastic (14,3,3)
   const stochData = Stochastic.calculate({
@@ -420,6 +457,7 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     minusDi,
     supertrendBullish,
     rsi,
+    rsiDivergence,
     stochK,
     stochD,
     stochRecovery,
