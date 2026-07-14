@@ -6,7 +6,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'DETAIL';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'DETAIL';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -139,6 +139,7 @@ async function runScreenerForSymbolRaw(
       DEFAULT: 60,
       SMART_MONEY: 80,
       BREAKOUT: 60,
+      EARLY_BREAKOUT: 40, // 2/5 — early accumulation catching initial momentum
       VOLUME_CLIMAX: 60,
       OVERSOLD: 40,
       SHORT_SQUEEZE: 60,
@@ -300,6 +301,21 @@ async function runScreenerForSymbolRaw(
       const bbReq = ta.bollingerB ? ta.bollingerB > 0.8 : false;
       taPass = taPass && volReq && adxReq && bbReq;
       if (taPass) signals.push('Swing Breakout Setup');
+    }
+    else if (preset === 'EARLY_BREAKOUT') {
+      // Accumulation (≥2/5) + early breakout (beginning to push above EMA20 / resistance)
+      // Softer thresholds compared to confirmed BREAKOUT:
+      // - Volume above average (≥ 1.5x vs 2.0x for confirmed breakout)
+      // - ADX starting to pick up or in early trend (≥ 18 vs > 25)
+      // - Bollinger %B pushing toward upper band (> 0.65 vs > 0.8)
+      // - Price above EMA20 (recently crossing or holding above short term trend)
+      taPass = totalTaScore >= 50;
+      const volReq = ta.volumeRatio ? ta.volumeRatio >= 1.5 : false;
+      const adxReq = ta.adx ? ta.adx >= 18 : false;
+      const bbReq = ta.bollingerB ? ta.bollingerB > 0.65 : false;
+      const emaReq = ta.ema20 != null ? price > ta.ema20 : false;
+      taPass = taPass && volReq && adxReq && bbReq && emaReq;
+      if (taPass) signals.push('Early Breakout Setup');
     }
     else if (preset === 'OVERSOLD') {
       // Early accumulation (≥2/5) + oversold bounce pattern
