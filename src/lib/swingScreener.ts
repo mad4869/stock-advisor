@@ -431,8 +431,8 @@ async function runScreenerForSymbolRaw(
       //   5. Stock still coiled: %B < 0.65 AND RSI 35–60
       //   6. ADX < 25 — no established trend yet (calm before the storm)
 
-      // 1. Volume elevated but NOT a public breakout yet
-      const volElevated = ta.volumeRatio != null && ta.volumeRatio >= 1.3 && ta.volumeRatio < 2.0;
+      // 1. Volume elevated (could be a quiet 1.5x or a massive 3.0x+ absorption day)
+      const volElevated = ta.volumeRatio != null && ta.volumeRatio >= 1.5;
 
       // 2. Price flat or only slightly up (≤ +3%) over the last 10 trading days
       let priceNotMovedYet = false;
@@ -460,7 +460,7 @@ async function runScreenerForSymbolRaw(
 
       taPass = volElevated && priceNotMovedYet && obvDiv && cmfPositive && stillCoiled && noTrendYet;
       criteria.push(
-        { label: 'Volume Elevated (Quiet)', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '1.3–2.0x', passed: volElevated },
+        { label: 'Volume (Absorption)', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 1.5x', passed: volElevated },
         { label: 'Price Not Moved Yet', value: priceChange10d != null ? `${(priceChange10d * 100).toFixed(1)}%` : '—', threshold: '≤ +3% (10d)', passed: priceNotMovedYet },
         { label: 'OBV Divergence', value: obvDiv ? 'Detected' : 'None', threshold: 'OBV rising, price flat', passed: obvDiv },
         { label: 'CMF (Money Flow)', value: accumulation.cmf.toFixed(3), threshold: '≥ 0.05', passed: cmfPositive },
