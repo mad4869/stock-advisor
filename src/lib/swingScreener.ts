@@ -314,13 +314,13 @@ async function runScreenerForSymbolRaw(
 
     if (preset === 'BREAKOUT') {
       // Accumulation (≥3/5) + breakout technical setup
-      const volReq = ta.volumeRatio ? ta.volumeRatio >= 2.0 : false;
+      const volReq = ta.volumeRatio ? ta.volumeRatio >= 3.0 : false;
       const adxReq = ta.adx ? ta.adx > 25 : false;
       const bbReq = ta.bollingerB ? ta.bollingerB > 0.8 : false;
       taPass = taPass && volReq && adxReq && bbReq;
       criteria.push(
         { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
-        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 2.0x', passed: volReq },
+        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 3.0x', passed: volReq },
         { label: 'ADX (Trend Strength)', value: ta.adx?.toFixed(1) ?? '—', threshold: '> 25', passed: adxReq },
         { label: 'Bollinger %B', value: ta.bollingerB?.toFixed(2) ?? '—', threshold: '> 0.80', passed: bbReq },
         { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
@@ -329,14 +329,14 @@ async function runScreenerForSymbolRaw(
     }
     else if (preset === 'EARLY_BREAKOUT') {
       taPass = totalTaScore >= 50;
-      const volReq = ta.volumeRatio ? ta.volumeRatio >= 1.5 : false;
+      const volReq = ta.volumeRatio ? ta.volumeRatio >= 3.0 : false;
       const adxReq = ta.adx ? ta.adx >= 18 : false;
       const bbReq = ta.bollingerB ? ta.bollingerB > 0.65 : false;
       const emaReq = ta.ema20 != null ? price > ta.ema20 : false;
       taPass = taPass && volReq && adxReq && bbReq && emaReq;
       criteria.push(
         { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 50', passed: totalTaScore >= 50 },
-        { label: 'Volume (Elevated)', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 1.5x', passed: volReq },
+        { label: 'Volume (Elevated)', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 3.0x', passed: volReq },
         { label: 'ADX (Early Trend)', value: ta.adx?.toFixed(1) ?? '—', threshold: '≥ 18', passed: adxReq },
         { label: 'Bollinger %B', value: ta.bollingerB?.toFixed(2) ?? '—', threshold: '> 0.65', passed: bbReq },
         { label: 'Price vs EMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema20 ? fmt(ta.ema20, isId) : '—'}`, passed: emaReq },
@@ -383,13 +383,13 @@ async function runScreenerForSymbolRaw(
       if (taPass) signals.push('Volume Climax Setup');
     }
     else if (preset === 'SHORT_SQUEEZE') {
-      const volReq = ta.volumeRatio ? ta.volumeRatio >= 2.5 : false;
+      const volReq = ta.volumeRatio ? ta.volumeRatio >= 3.0 : false;
       const emaReq = ta.ema20 != null ? price > ta.ema20 : false;
       const stochReq = ta.stochRecovery;
       taPass = taPass && volReq && emaReq && stochReq;
       criteria.push(
         { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
-        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 2.5x', passed: volReq },
+        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 3.0x', passed: volReq },
         { label: 'Price vs EMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema20 ? fmt(ta.ema20, isId) : '—'}`, passed: emaReq },
         { label: 'Stochastic Recovery', value: stochReq ? 'Yes' : 'No', threshold: 'Oversold → rising', passed: stochReq },
         { label: 'Short Interest', value: '≥10% (checked later)', threshold: '≥ 10% of float', passed: true }, // checked post-fundamentals
