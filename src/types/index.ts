@@ -211,6 +211,13 @@ export interface ClosedPosition {
   planAnalysis?: string;
 }
 
+export interface PresetCriterion {
+  label: string;      // e.g. "Volume Spike"
+  value: string;      // e.g. "6.8x"
+  threshold: string;  // e.g. "≥ 3.0x"
+  passed: boolean;    // true = green chip, false = red chip
+}
+
 export interface SwingScreenerResult {
   symbol: string;
   market: Market;
@@ -230,6 +237,8 @@ export interface SwingScreenerResult {
     largeBlockBuying: boolean;
   } | null;
   signals: string[];
+  presetCriteria?: PresetCriterion[];  // structured pass/fail per criterion for the active preset
+  consistencyScore?: { s: number; m: number; l: number; label: string } | null;
   isPass: boolean;
   error?: string;
   redFlags?: any[];

@@ -322,3 +322,65 @@ export function computeAccumulation(
     logs
   };
 }
+
+/**
+ * Multi-Timeframe Accumulation Consistency.
+ * Runs the same 5 signals independently on short (5d suffix), medium (10d), and long (20d) windows.
+ * Each window uses the most recent N bars as context.
+ * Returns a score per window (0–100) and a human-readable label.
+ */
+export function computeAccumulationMultiTimeframe(
+  history: Array<{ open: number; high: number; low: number; close: number; volume: number }>
+): { s: number; m: number; l: number; label: string } {
+  const validHistory = history.filter(
+    h => h.open > 0 && h.high > 0 && h.low > 0 && h.close > 0 && h.volume >= 0
+  );
+
+  function scoreWindow(n: number): number {
+    if (validHistory.length < n + 5) return 0;
+    const slice = validHistory.slice(-n);
+    const opens  = slice.map(h => h.open);
+    const highs  = slice.map(h => h.high);
+    const lows   = slice.map(h => h.low);
+    const closes = slice.map(h => h.close);
+    const vols   = slice.map(h => h.volume);
+
+    const adLine  = (() => {
+      let cum = 0;
+      return closes.map((_, i) => { cum += moneyFlowMultiplier(highs[i], lows[i], closes[i]) * vols[i]; return cum; });
+    })();
+    const period  = Math.min(n, 5);
+    const adOk    = isADTrendBullish(adLine, period);
+    const cmfPer  = Math.min(n, 10);
+    const cmfVal  = computeCMF(highs, lows, closes, vols, cmfPer);
+    const cmfOk   = cmfVal > 0;
+    const vpPer   = Math.min(n, 10);
+    const vpRes   = computeVolumeProfile(closes, vols, vpPer);
+    const vpOk    = vpRes.bullish;
+    const obvPer  = Math.min(n, 8);
+    const obvOk   = detectOBVDivergence(closes, vols, obvPer);
+    const lbLook  = Math.min(n, 5);
+    const lbRes   = detectLargeBlocks(closes, opens, vols, lbLook, 1);
+    const lbOk    = lbRes.detected;
+
+    const count = [adOk, cmfOk, vpOk, obvOk, lbOk].filter(Boolean).length;
+    return count * 20;
+  }
+
+  const s = scoreWindow(10);   // short  ~2 weeks
+  const m = scoreWindow(20);   // medium ~1 month
+  const l = scoreWindow(40);   // long   ~2 months
+
+  const consistent = s >= 40 && m >= 40 && l >= 40;
+  const passing = [s, m, l].filter(v => v >= 40).length;
+  const label = consistent
+    ? '3/3 Consistent'
+    : passing === 2
+      ? '2/3 Moderate'
+      : passing === 1
+        ? '1/3 Weak'
+        : '0/3 No Signal';
+
+  return { s, m, l, label };
+}
+

@@ -1,12 +1,13 @@
 import { yf, getComprehensiveAnalysis2 } from './yahooFinance2';
 import { calculateTA, TAData } from './technicalIndicators';
-import { computeAccumulation, AccumulationSignals } from './accumulationProxy';
+import { computeAccumulation, computeAccumulationMultiTimeframe, AccumulationSignals } from './accumulationProxy';
+import { PresetCriterion } from '@/types';
 import { historyCache, singleScreenerCache, CACHE_TTL } from './cache';
 import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'DETAIL';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -70,6 +71,8 @@ async function runScreenerForSymbolRaw(
     taData: null,
     smartMoney: null,
     signals: [],
+    presetCriteria: [],
+    consistencyScore: null,
     isPass: false
   };
 
@@ -139,15 +142,17 @@ async function runScreenerForSymbolRaw(
       DEFAULT: 60,
       SMART_MONEY: 80,
       BREAKOUT: 60,
-      EARLY_BREAKOUT: 40, // 2/5 — early accumulation catching initial momentum
+      EARLY_BREAKOUT: 40,
       VOLUME_CLIMAX: 60,
       OVERSOLD: 40,
       SHORT_SQUEEZE: 60,
       MA_TREND: 60,
-      STEALTH_ACCUM: 40, // lenient — we're catching early setups
-      BULL_DIV: 40,       // lenient — divergence alone is the primary gate
-      TA_ONLY: 0, // not used as a gate for this preset
-      DETAIL: 0,  // not used as a gate for this preset
+      STEALTH_ACCUM: 40,
+      BULL_DIV: 40,
+      VOL_SPIKE: 20,     // very lenient — volume anomaly is the primary gate
+      CONSISTENCY: 60,   // must accumulate in medium window at minimum
+      TA_ONLY: 0,
+      DETAIL: 0,
     };
     const accThreshold = accThresholdMap[preset];
     const accumulation = computeAccumulation(history, accThreshold);
@@ -293,6 +298,19 @@ async function runScreenerForSymbolRaw(
     // the accumulation gate.
     // ──────────────────────────────────────────────
     let taPass = totalTaScore >= 60;
+    const criteria: PresetCriterion[] = [];
+    const fmt = (v: number, isId: boolean) => isId ? v.toLocaleString('id-ID') : v.toLocaleString('en-US');
+    const isId = market === 'ID';
+    const cur = isId ? 'Rp' : '$';
+
+    // Derived metrics from history not present in TAData
+    const validH = history.filter((h: any) => h.close > 0);
+    const lastH = validH[validH.length - 1] ?? null;
+    const h10dAgo = validH.length >= 10 ? validH[validH.length - 10] : null;
+    const priceChange10d = lastH && h10dAgo && h10dAgo.close > 0
+      ? (lastH.close - h10dAgo.close) / h10dAgo.close
+      : null;
+    const todayOpen: number | null = lastH?.open ?? null;
 
     if (preset === 'BREAKOUT') {
       // Accumulation (≥3/5) + breakout technical setup
@@ -300,58 +318,85 @@ async function runScreenerForSymbolRaw(
       const adxReq = ta.adx ? ta.adx > 25 : false;
       const bbReq = ta.bollingerB ? ta.bollingerB > 0.8 : false;
       taPass = taPass && volReq && adxReq && bbReq;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
+        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 2.0x', passed: volReq },
+        { label: 'ADX (Trend Strength)', value: ta.adx?.toFixed(1) ?? '—', threshold: '> 25', passed: adxReq },
+        { label: 'Bollinger %B', value: ta.bollingerB?.toFixed(2) ?? '—', threshold: '> 0.80', passed: bbReq },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+      );
       if (taPass) signals.push('Swing Breakout Setup');
     }
     else if (preset === 'EARLY_BREAKOUT') {
-      // Accumulation (≥2/5) + early breakout (beginning to push above EMA20 / resistance)
-      // Softer thresholds compared to confirmed BREAKOUT:
-      // - Volume above average (≥ 1.5x vs 2.0x for confirmed breakout)
-      // - ADX starting to pick up or in early trend (≥ 18 vs > 25)
-      // - Bollinger %B pushing toward upper band (> 0.65 vs > 0.8)
-      // - Price above EMA20 (recently crossing or holding above short term trend)
       taPass = totalTaScore >= 50;
       const volReq = ta.volumeRatio ? ta.volumeRatio >= 1.5 : false;
       const adxReq = ta.adx ? ta.adx >= 18 : false;
       const bbReq = ta.bollingerB ? ta.bollingerB > 0.65 : false;
       const emaReq = ta.ema20 != null ? price > ta.ema20 : false;
       taPass = taPass && volReq && adxReq && bbReq && emaReq;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 50', passed: totalTaScore >= 50 },
+        { label: 'Volume (Elevated)', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 1.5x', passed: volReq },
+        { label: 'ADX (Early Trend)', value: ta.adx?.toFixed(1) ?? '—', threshold: '≥ 18', passed: adxReq },
+        { label: 'Bollinger %B', value: ta.bollingerB?.toFixed(2) ?? '—', threshold: '> 0.65', passed: bbReq },
+        { label: 'Price vs EMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema20 ? fmt(ta.ema20, isId) : '—'}`, passed: emaReq },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 40', passed: accumulation.accumulationScore >= 40 },
+      );
       if (taPass) signals.push('Early Breakout Setup');
     }
     else if (preset === 'OVERSOLD') {
-      // Early accumulation (≥2/5) + oversold bounce pattern
-      // Lower TA threshold since these are recovery plays
       taPass = totalTaScore >= 40;
       const rsiReq = ta.rsi ? ta.rsi >= 30 && ta.rsi <= 55 : false;
       const pivotReq = ta.distanceToS1 ? ta.distanceToS1 <= 0.05 && ta.distanceToS1 >= -0.02 : false;
       taPass = taPass && rsiReq && pivotReq;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 40', passed: totalTaScore >= 40 },
+        { label: 'RSI (Oversold Zone)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '30–55', passed: rsiReq },
+        { label: 'Near Pivot S1', value: ta.distanceToS1 != null ? `${(ta.distanceToS1 * 100).toFixed(1)}%` : '—', threshold: '≤ +5% from S1', passed: pivotReq },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 40', passed: accumulation.accumulationScore >= 40 },
+      );
       if (taPass) signals.push('Oversold Bounce Setup');
     }
     else if (preset === 'SMART_MONEY') {
-      // Strong accumulation (≥4/5) + MACD momentum confirmation
       const macdReq = ta.macdIncreasing;
       taPass = taPass && macdReq;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 80 (4/5)', passed: accumulation.accumulationScore >= 80 },
+        { label: 'MACD Increasing', value: macdReq ? 'Yes' : 'No', threshold: 'Must be rising', passed: macdReq },
+        { label: 'Signals Bullish', value: `${accumulation.signalCount}/5`, threshold: '≥ 4/5', passed: accumulation.signalCount >= 4 },
+      );
       if (taPass) signals.push('Smart Money Flow Confirmation');
     }
     else if (preset === 'VOLUME_CLIMAX') {
-      // Accumulation (≥3/5) + extreme volume event
       const volReq = ta.volumeRatio ? ta.volumeRatio >= 3.0 : false;
-      const emaReq = ta.ema50 ? price > ta.ema50 : false;
+      const emaReq = ta.ema50 != null ? price > ta.ema50 : false;
       const rsiReq = ta.rsi ? ta.rsi < 70 : false;
       taPass = taPass && volReq && emaReq && rsiReq;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
+        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 3.0x', passed: volReq },
+        { label: 'Price vs EMA50', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema50 ? fmt(ta.ema50, isId) : '—'}`, passed: emaReq },
+        { label: 'RSI (Not Overbought)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '< 70', passed: rsiReq },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+      );
       if (taPass) signals.push('Volume Climax Setup');
     }
     else if (preset === 'SHORT_SQUEEZE') {
-      // Accumulation (≥3/5) + squeeze pattern (US only in practice)
-      // Also requires actual short interest data > 10% of float
       const volReq = ta.volumeRatio ? ta.volumeRatio >= 2.5 : false;
-      const emaReq = ta.ema20 ? price > ta.ema20 : false;
+      const emaReq = ta.ema20 != null ? price > ta.ema20 : false;
       const stochReq = ta.stochRecovery;
       taPass = taPass && volReq && emaReq && stochReq;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
+        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 2.5x', passed: volReq },
+        { label: 'Price vs EMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema20 ? fmt(ta.ema20, isId) : '—'}`, passed: emaReq },
+        { label: 'Stochastic Recovery', value: stochReq ? 'Yes' : 'No', threshold: 'Oversold → rising', passed: stochReq },
+        { label: 'Short Interest', value: '≥10% (checked later)', threshold: '≥ 10% of float', passed: true }, // checked post-fundamentals
+      );
       if (taPass) signals.push('Short Squeeze Setup');
     }
     else if (preset === 'MA_TREND') {
-      // Accumulation (≥3/5) + price above all 6 MAs (EMA 20/50/200 + SMA 20/50/200)
-      // Slightly relaxed TA score (≥50) since the 6-MA alignment is already a strong structural filter
       taPass = totalTaScore >= 50;
       const aboveEma20 = ta.ema20 != null ? price > ta.ema20 : false;
       const aboveEma50 = ta.ema50 != null ? price > ta.ema50 : false;
@@ -361,6 +406,16 @@ async function runScreenerForSymbolRaw(
       const aboveSma200 = ta.sma200 != null ? price > ta.sma200 : false;
       const allMaAbove = aboveEma20 && aboveEma50 && aboveEma200 && aboveSma20 && aboveSma50 && aboveSma200;
       taPass = taPass && allMaAbove;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 50', passed: totalTaScore >= 50 },
+        { label: 'Price vs EMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema20 ? fmt(ta.ema20, isId) : '—'}`, passed: aboveEma20 },
+        { label: 'Price vs EMA50', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema50 ? fmt(ta.ema50, isId) : '—'}`, passed: aboveEma50 },
+        { label: 'Price vs EMA200', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema200 ? fmt(ta.ema200, isId) : '—'}`, passed: aboveEma200 },
+        { label: 'Price vs SMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.sma20 ? fmt(ta.sma20, isId) : '—'}`, passed: aboveSma20 },
+        { label: 'Price vs SMA50', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.sma50 ? fmt(ta.sma50, isId) : '—'}`, passed: aboveSma50 },
+        { label: 'Price vs SMA200', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.sma200 ? fmt(ta.sma200, isId) : '—'}`, passed: aboveSma200 },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+      );
       if (taPass) signals.push('Above All MAs (EMA & SMA)');
     }
     else if (preset === 'STEALTH_ACCUM') {
@@ -404,11 +459,18 @@ async function runScreenerForSymbolRaw(
       const noTrendYet = ta.adx != null ? ta.adx < 25 : true; // if ADX unavailable, allow
 
       taPass = volElevated && priceNotMovedYet && obvDiv && cmfPositive && stillCoiled && noTrendYet;
+      criteria.push(
+        { label: 'Volume Elevated (Quiet)', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '1.3–2.0x', passed: volElevated },
+        { label: 'Price Not Moved Yet', value: priceChange10d != null ? `${(priceChange10d * 100).toFixed(1)}%` : '—', threshold: '≤ +3% (10d)', passed: priceNotMovedYet },
+        { label: 'OBV Divergence', value: obvDiv ? 'Detected' : 'None', threshold: 'OBV rising, price flat', passed: obvDiv },
+        { label: 'CMF (Money Flow)', value: accumulation.cmf.toFixed(3), threshold: '≥ 0.05', passed: cmfPositive },
+        { label: 'Bollinger %B (Coiled)', value: ta.bollingerB?.toFixed(2) ?? '—', threshold: '< 0.65', passed: ta.bollingerB != null ? ta.bollingerB < 0.65 : false },
+        { label: 'RSI (Sweet Spot)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '35–60', passed: ta.rsi != null ? ta.rsi >= 35 && ta.rsi <= 60 : false },
+        { label: 'No Established Trend', value: ta.adx?.toFixed(1) ?? '—', threshold: 'ADX < 25', passed: noTrendYet },
+      );
       if (taPass) {
         signals.push('Stealth Accumulation — Volume Rising, Price Not Yet');
         if (accumulation.largeBlockBuying) signals.push('Block Buying Detected');
-        signals.push(`CMF: ${accumulation.cmf.toFixed(3)} (Positive Money Flow)`);
-        if (ta.adx) signals.push(`ADX: ${ta.adx.toFixed(1)} — Coiling Phase`);
       }
     }
     else if (preset === 'BULL_DIV') {
@@ -427,6 +489,13 @@ async function runScreenerForSymbolRaw(
       const momentumTurning = ta.stochRecovery || ta.macdIncreasing;
 
       taPass = divDetected && rsiInRange && momentumTurning;
+      criteria.push(
+        { label: 'RSI Divergence', value: divDetected ? 'Detected' : 'None', threshold: 'Price LL + RSI HL', passed: divDetected },
+        { label: 'RSI (Sweet Spot)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '30–62', passed: rsiInRange },
+        { label: 'Momentum Turning', value: ta.stochRecovery ? 'Stoch Recovery' : ta.macdIncreasing ? 'MACD Rising' : 'No', threshold: 'Stoch or MACD', passed: momentumTurning },
+        { label: 'OBV Divergence', value: accumulation.obvDivergence ? 'Confirmed' : 'Absent', threshold: 'Supporting signal', passed: accumulation.obvDivergence },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 40', passed: accumulation.accumulationScore >= 40 },
+      );
       if (taPass) {
         signals.push('RSI Bullish Divergence — Price Lower Low, RSI Higher Low');
         if (ta.stochRecovery) signals.push('Stochastic Oversold Recovery');
@@ -434,17 +503,60 @@ async function runScreenerForSymbolRaw(
         if (accumulation.obvDivergence) signals.push('OBV Divergence Confirms');
       }
     }
+    else if (preset === 'VOL_SPIKE') {
+      // Standalone Volume Anomaly screener — catches stocks like WIFI with a 6.8x spike.
+      // Primary gate: today's volume ratio >= 3.0x the 20-day average.
+      // Secondary: not a collapsing stock (price change > -5%).
+      // Very lenient accumulation gate (20) so even one signal doesn't block it.
+      taPass = true; // override — volume is the primary gate, not TA score
+      const volReq = ta.volumeRatio ? ta.volumeRatio >= 3.0 : false;
+      const priceNotCrashing = priceChange10d != null ? priceChange10d > -0.05 : true;
+      const upDayReq = ta.close != null && todayOpen != null ? ta.close >= todayOpen * 0.98 : true;
+      taPass = volReq && priceNotCrashing && upDayReq;
+      criteria.push(
+        { label: 'Volume Spike', value: `${ta.volumeRatio?.toFixed(1) ?? '—'}x`, threshold: '≥ 3.0x avg', passed: volReq },
+        { label: 'Price Not Crashing', value: priceChange10d != null ? `${(priceChange10d * 100).toFixed(1)}%` : '—', threshold: '> -5% (10d)', passed: priceNotCrashing },
+        { label: 'Not Heavy Sell-Off Day', value: upDayReq ? 'OK' : 'Down day', threshold: 'Close ≥ 98% of Open', passed: upDayReq },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 20 (bonus)', passed: accumulation.accumulationScore >= 20 },
+      );
+      if (taPass) signals.push(`Volume Spike (${ta.volumeRatio?.toFixed(1)}x avg)`);
+    }
+    else if (preset === 'CONSISTENCY') {
+      // Multi-timeframe accumulation consistency.
+      // Passes only if accumulation signals are confirmed across ALL 3 timeframes:
+      // short (~2 weeks), medium (~1 month), long (~2 months).
+      const mtf = computeAccumulationMultiTimeframe(history);
+      result.consistencyScore = mtf;
+      const shortOk = mtf.s >= 40;
+      const mediumOk = mtf.m >= 40;
+      const longOk   = mtf.l >= 40;
+      taPass = shortOk && mediumOk && longOk;
+      criteria.push(
+        { label: 'Short-Term (2w)', value: `${mtf.s}/100`, threshold: '≥ 40', passed: shortOk },
+        { label: 'Medium-Term (1m)', value: `${mtf.m}/100`, threshold: '≥ 40', passed: mediumOk },
+        { label: 'Long-Term (2m)', value: `${mtf.l}/100`, threshold: '≥ 40', passed: longOk },
+        { label: 'Consistency Label', value: mtf.label, threshold: '3/3 required', passed: taPass },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+      );
+      if (taPass) signals.push(`Consistent Accumulation (${mtf.label})`);
+    }
     else if (preset === 'TA_ONLY') {
-      // Pure TA score gate — no smart money requirement.
-      // Only stocks with an elite TA score of 90+ pass.
       taPass = totalTaScore >= 90;
+      criteria.push(
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 90 (Elite)', passed: totalTaScore >= 90 },
+      );
       if (taPass) signals.push('Elite TA Score (90+)');
     }
     else if (preset === 'DETAIL') {
-      // Detail page view — bypasses all screener gates.
-      // TA score and data are always computed and returned for display;
-      // this preset never sets isPass = true since it is not a filter.
       taPass = false;
+    }
+    else {
+      // DEFAULT: just accumulation + TA score gates, no extra criteria
+      criteria.push(
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+        { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
+        { label: 'Signals Bullish', value: `${accumulation.signalCount}/5`, threshold: '≥ 3/5', passed: accumulation.signalCount >= 3 },
+      );
     }
 
     if (taPass) {
@@ -551,6 +663,7 @@ async function runScreenerForSymbolRaw(
     }
 
     result.signals = signals;
+    result.presetCriteria = criteria;
     result.isPass = taPass;
 
     return result;
