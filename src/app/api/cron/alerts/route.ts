@@ -6,7 +6,7 @@ import { sendTelegramAlert } from '@/lib/telegramNotifier';
 import { Market } from '@/types';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // Allow up to 300s for batch processing (Vercel Pro/Cron max)
+export const maxDuration = 60; // Vercel Hobby maximum duration limit
 
 /**
  * Helper to delay between concurrency batches to prevent Yahoo Finance 429 errors
@@ -77,7 +77,13 @@ export async function GET(request: NextRequest) {
   // ──────────────────────────────────────────────────────────────
   // 4. BATCHED CONCURRENCY SCANNING LOOP
   // ──────────────────────────────────────────────────────────────
+  const startTime = Date.now();
   for (let i = 0; i < symbols.length; i += batchSize) {
+    if (Date.now() - startTime > 52000) {
+      console.warn('[cron/alerts] Approaching 60s Vercel Hobby duration limit. Exiting loop cleanly.');
+      break;
+    }
+
     const batchSymbols = symbols.slice(i, i + batchSize);
 
     await Promise.allSettled(
