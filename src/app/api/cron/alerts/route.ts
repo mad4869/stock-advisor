@@ -27,10 +27,10 @@ export async function GET(request: NextRequest) {
     const dayOfWeek = jakartaDate.getDay(); // 0 = Sunday, 6 = Saturday
     const hours = jakartaDate.getHours();
 
-    if (dayOfWeek === 0 || dayOfWeek === 6 || hours < 9 || hours >= 16) {
+    if (dayOfWeek === 0 || dayOfWeek === 6 || hours < 10 || hours >= 16) {
       return NextResponse.json({
         status: 'skipped_outside_market_hours',
-        message: `Current Jakarta time (${jakartaDate.toLocaleTimeString('id-ID')}, Day ${dayOfWeek}) is outside IDX trading hours (M-F 09:00-16:00 WIB). Use ?force=true to test anytime.`
+        message: `Current Jakarta time (${jakartaDate.toLocaleTimeString('id-ID')}, Day ${dayOfWeek}) is outside IDX trading hours (M-F 10:00-16:00 WIB). Use ?force=true to test anytime.`
       });
     }
   }

@@ -19,7 +19,7 @@
   "crons": [
     {
       "path": "/api/cron/alerts?market=ID&universe=ALL&preset=VOL_SPIKE,STEALTH_ACCUM",
-      "schedule": "0 2 * * 1-5"
+      "schedule": "0 3 * * 1-5"
     }
   ]
 }
