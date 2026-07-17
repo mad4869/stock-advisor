@@ -11,6 +11,15 @@
     },
     "src/app/api/test/route.ts": {
       "maxDuration": 30
+    },
+    "src/app/api/cron/alerts/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/alerts?market=ID&universe=ALL&preset=VOL_SPIKE,STEALTH_ACCUM",
+      "schedule": "*/15 * * * 1-5"
+    }
+  ]
 }
