@@ -287,7 +287,7 @@ async function runScreenerForSymbolRaw(
       signals.push('Near Pivot Support');
     }
 
-    const totalTaScore = trendScore + volScore + momScore + structScore;
+    const totalTaScore = Math.round(trendScore + volScore + momScore + structScore);
     result.taScore = totalTaScore;
 
     // ──────────────────────────────────────────────

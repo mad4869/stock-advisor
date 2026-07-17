@@ -25,6 +25,7 @@ export default function MacroDashboard() {
   const [activeTab, setActiveTab] = useState<MacroCategory | 'all'>('all');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const fetchMacroData = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -48,11 +49,14 @@ export default function MacroDashboard() {
   };
 
   useEffect(() => {
-    fetchMacroData();
+    if (!isExpanded) return;
+    if (indicators.length === 0) {
+      fetchMacroData();
+    }
     // Refresh every 3 minutes automatically
     const interval = setInterval(() => fetchMacroData(), 3 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isExpanded]);
 
   const categories: { id: MacroCategory | 'all'; label: string; icon: React.ReactNode; count?: number }[] = [
     { id: 'all', label: 'All Indicators', icon: <Layers className="w-4 h-4" /> },
@@ -114,9 +118,12 @@ export default function MacroDashboard() {
   const vixIndicator = indicators.find((i) => i.symbol === '^VIX');
 
   return (
-    <div className="card border border-dark-600 bg-dark-800/80 backdrop-blur-xl space-y-6">
+    <div className="card border border-dark-600 bg-dark-800/80 backdrop-blur-xl">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-dark-600">
+      <div 
+        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 cursor-pointer hover:bg-dark-700/40 transition-colors ${isExpanded ? 'border-b border-dark-600' : ''}`}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
         <div>
           <div className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-blue-400" />
@@ -125,28 +132,39 @@ export default function MacroDashboard() {
             </h2>
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            Real-time sentiment, commodities, and index gauges to assess market health before taking swing trades.
+            Real-time sentiment, commodities, and index gauges to assess market health.
           </p>
         </div>
 
         <div className="flex items-center gap-3 self-end sm:self-auto">
-          {lastUpdated && (
+          {lastUpdated && isExpanded && (
             <span className="text-2xs text-gray-400 font-mono">
               Updated: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           )}
-          <button
-            onClick={() => fetchMacroData(true)}
-            disabled={loading || refreshing}
-            className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-500 rounded-lg text-gray-300 hover:text-white transition-all disabled:opacity-50 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-            title="Refresh Market Data"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
-          </button>
+          {isExpanded && (
+            <button
+              onClick={(e) => { e.stopPropagation(); fetchMacroData(true); }}
+              disabled={loading || refreshing}
+              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-500 rounded-lg text-gray-300 hover:text-white transition-all disabled:opacity-50 flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+              title="Refresh Market Data"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
+            </button>
+          )}
+          <div className="text-gray-400 ml-2">
+            {isExpanded ? (
+              <span className="text-xs font-bold text-blue-400">HIDE</span>
+            ) : (
+              <span className="text-xs font-bold text-blue-400">SHOW</span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Prominent VIX (Fear & Greed) Banner if loaded */}
+      {isExpanded && (
+        <div className="p-5 space-y-6">
+          {/* Prominent VIX (Fear & Greed) Banner if loaded */}
       {vixIndicator && (
         <div className="bg-gradient-to-r from-purple-900/30 via-dark-700/50 to-blue-900/30 border border-purple-500/30 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg shadow-purple-950/20">
           <div className="flex items-start md:items-center gap-3">
@@ -283,6 +301,8 @@ export default function MacroDashboard() {
               </div>
             );
           })}
+        </div>
+      )}
         </div>
       )}
     </div>
