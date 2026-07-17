@@ -42,7 +42,8 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
   const priceStr = price != null ? `<b>Live Price:</b> ${market === 'ID' ? 'Rp ' : '$'}${price.toLocaleString()}` : '';
   const smartScoreStr = smartMoneyScore != null ? `<b>Smart Money Score:</b> ${smartMoneyScore}/100` : '';
 
-  const baseUrl = payload.appBaseUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://your-app.vercel.app';
+  const vUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL;
+  const baseUrl = payload.appBaseUrl || process.env.NEXT_PUBLIC_APP_URL || (vUrl ? `https://${vUrl}` : 'https://stock-advisor-two.vercel.app');
   const detailUrl = `${baseUrl.replace(/\/$/, '')}/stock/${symbol}?market=${market}&preset=${preset}`;
 
   const message = `
