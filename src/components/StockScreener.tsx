@@ -212,7 +212,7 @@ export default function StockScreener() {
             <option value="VOLUME_CLIMAX">Volume Climax (Accumulation + Surge)</option>
             <option value="MA_TREND">MA Trend (Above All EMA &amp; SMA)</option>
             <option value="TA_ONLY">Elite TA Only (Score 90+, No Smart Money)</option>
-            <option value="HIGH_YIELD_DIVIDEND">💰 High Yield Dividend (&ge;5% Yield + &ge;50% Peak Discount)</option>
+            <option value="HIGH_YIELD_DIVIDEND">💰 High Yield Dividend (&ge;5% Yield)</option>
             {marketTab === 'US' && <option value="SHORT_SQUEEZE">Short Squeeze (US Only)</option>}
           </select>
         </div>

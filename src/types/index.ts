@@ -258,6 +258,7 @@ export interface SwingScreenerResult {
   } | null;
 
   dividendYield?: number | null;
+  priceDiscountFromPeak?: number | null;
 
   // Analyst consensus (surfaced from ComprehensiveAnalysis)
   analystUpside?: number | null;   // % upside to analyst mean price target

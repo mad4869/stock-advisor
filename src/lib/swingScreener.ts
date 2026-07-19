@@ -162,8 +162,8 @@ async function runScreenerForSymbolRaw(
     // Early exit: if not accumulating, skip full TA computation.
     // This is both architecturally correct (follow smart money first)
     // and a performance optimization for large universes.
-    // Exception: TA_ONLY and DETAIL presets ignore the smart money gate entirely.
-    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL') {
+    // Exception: TA_ONLY, DETAIL, and HIGH_YIELD_DIVIDEND presets ignore the smart money gate entirely.
+    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND') {
       result.isPass = false;
       return result;
     }
@@ -182,10 +182,10 @@ async function runScreenerForSymbolRaw(
       return result;
     }
 
-    // Absolute volume floor check — skipped for DETAIL preset so the stock
-    // detail page always receives full TA data regardless of liquidity.
+    // Absolute volume floor check — skipped for DETAIL and HIGH_YIELD_DIVIDEND preset
+    // so the stock detail page always receives full TA data regardless of liquidity.
     result.taData = ta;
-    if (preset !== 'DETAIL' && ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
+    if (preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND' && ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
       result.error = 'Insufficient liquidity';
       return result;
     }
@@ -555,8 +555,8 @@ async function runScreenerForSymbolRaw(
       taPass = true; // Bypass TA and Accumulation gates
       criteria.push(
         { label: 'Dividend Yield', value: 'Fetching...', threshold: '≥ 5.0%', passed: false },
-        { label: 'Fundamental Score', value: 'Fetching...', threshold: '≥ 60', passed: false },
-        { label: 'Discount from Peak', value: 'Fetching...', threshold: '≥ 50% from 52w High', passed: false },
+        { label: 'Fundamental Score', value: 'Fetching...', threshold: 'For Sorting', passed: true },
+        { label: 'Discount from Peak', value: 'Fetching...', threshold: 'For Sorting', passed: true },
       );
       if (taPass) signals.push('Evaluating Yield & Fundamentals...');
     }
@@ -605,25 +605,23 @@ async function runScreenerForSymbolRaw(
             const high52Week = Math.max(...history.map(h => h.high));
             const currentPrice = history[history.length - 1].close;
             const priceDiscount = high52Week > 0 ? ((high52Week - currentPrice) / high52Week) * 100 : 0;
+            result.priceDiscountFromPeak = priceDiscount;
             
             const yieldReq = yieldPct >= 5.0;
-            const fundReq = fundTotal >= 60;
-            const discountReq = priceDiscount >= 50.0;
-            
-            taPass = yieldReq && fundReq && discountReq;
+            taPass = yieldReq; // Only filter by yield!
             
             // Update the placeholders created earlier
             const yieldItem = criteria.find(c => c.label === 'Dividend Yield');
             if (yieldItem) { yieldItem.passed = yieldReq; yieldItem.value = `${yieldPct.toFixed(2)}%`; }
             const fundItem = criteria.find(c => c.label === 'Fundamental Score');
-            if (fundItem) { fundItem.passed = fundReq; fundItem.value = `${fundTotal}`; }
+            if (fundItem) { fundItem.passed = true; fundItem.value = `${fundTotal}`; } // Used for sorting only
             const discItem = criteria.find(c => c.label === 'Discount from Peak');
-            if (discItem) { discItem.passed = discountReq; discItem.value = `-${priceDiscount.toFixed(1)}%`; }
+            if (discItem) { discItem.passed = true; discItem.value = `-${priceDiscount.toFixed(1)}%`; } // Used for sorting only
             
             if (taPass) {
-              signals.push('High Yield Value Trap Avoided');
+              signals.push('High Yield Screen Passed');
             } else {
-              signals.push('Failed High Yield or Fundamental Requirements');
+              signals.push(`Failed High Yield Requirement (${yieldPct.toFixed(2)}% < 5.0%)`);
             }
           }
 
@@ -701,6 +699,9 @@ async function runScreenerForSymbolRaw(
         }
       } catch (err: any) {
         console.warn(`[Screener] Failed to fetch fundamentals/red flags for ${cleanSymbol}: ${err.message}`);
+        if (preset === 'HIGH_YIELD_DIVIDEND') {
+          taPass = false; // Fail the screen if fundamentals (dividend data) fail to load
+        }
       }
     }
 

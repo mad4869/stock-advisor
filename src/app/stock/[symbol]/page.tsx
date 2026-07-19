@@ -8,6 +8,7 @@ import { SwingScreenerResult, StockQuote, PriceRecommendation, Market } from '@/
 import PriceRecommendationCard from '@/components/PriceRecommendationCard';
 
 // Fundamental Analysis Components
+import { computeFundamentalScore } from '@/lib/fundamentalScorer';
 import CompanyOverview from '@/components/analysis/CompanyOverview';
 import ValuationMetrics from '@/components/analysis/ValuationMetrics';
 import ProfitabilityCharts from '@/components/analysis/ProfitabilityCharts';
@@ -91,6 +92,7 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
 
   // Build PeerData for comparison component
   const analysis = analysisData?.analysis;
+  const fundamentalScore = analysis ? computeFundamentalScore(analysis, market as Market) : null;
   const currentPeerData = analysis
     ? {
         symbol: analysis.fundamentals.symbol,
@@ -483,6 +485,33 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
       {/* Tab Contents: Fundamental */}
       {activeTab === 'fundamental' && analysisData && (
         <div className="space-y-6">
+          {fundamentalScore && (
+            <div className="card border-blue-500/30 bg-blue-900/10">
+              <h3 className="text-xl font-bold text-white flex items-center">
+                <span className={`px-3 py-1 rounded-full text-sm mr-3 font-bold ${
+                  fundamentalScore.grade === 'A' ? 'bg-green-500 text-white' :
+                  fundamentalScore.grade === 'B' ? 'bg-emerald-500 text-white' :
+                  fundamentalScore.grade === 'C' ? 'bg-yellow-500 text-black' :
+                  fundamentalScore.grade === 'D' ? 'bg-orange-500 text-white' :
+                  'bg-red-500 text-white'
+                }`}>
+                  {fundamentalScore.grade}
+                </span>
+                Fundamental Quality Score: {fundamentalScore.total} / 100
+              </h3>
+              <p className="text-sm text-blue-200 mt-2">
+                A quantitative assessment of valuation, growth, profitability, health, cash flow, and analyst sentiment.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mt-4 text-center text-xs">
+                <div className="bg-dark-800 p-3 rounded-xl border border-dark-600 flex flex-col justify-center"><span className="block text-gray-400 mb-1">Valuation</span><span className="font-bold text-white text-lg">{fundamentalScore.valuation}/20</span></div>
+                <div className="bg-dark-800 p-3 rounded-xl border border-dark-600 flex flex-col justify-center"><span className="block text-gray-400 mb-1">Growth</span><span className="font-bold text-white text-lg">{fundamentalScore.growth}/20</span></div>
+                <div className="bg-dark-800 p-3 rounded-xl border border-dark-600 flex flex-col justify-center"><span className="block text-gray-400 mb-1">Profitability</span><span className="font-bold text-white text-lg">{fundamentalScore.profitability}/15</span></div>
+                <div className="bg-dark-800 p-3 rounded-xl border border-dark-600 flex flex-col justify-center"><span className="block text-gray-400 mb-1">Health</span><span className="font-bold text-white text-lg">{fundamentalScore.health}/15</span></div>
+                <div className="bg-dark-800 p-3 rounded-xl border border-dark-600 flex flex-col justify-center"><span className="block text-gray-400 mb-1">Cash Flow</span><span className="font-bold text-white text-lg">{fundamentalScore.cashFlow}/15</span></div>
+                <div className="bg-dark-800 p-3 rounded-xl border border-dark-600 flex flex-col justify-center"><span className="block text-gray-400 mb-1">Analyst</span><span className="font-bold text-white text-lg">{fundamentalScore.analyst}/15</span></div>
+              </div>
+            </div>
+          )}
           <CompanyOverview analysis={analysisData.analysis} />
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

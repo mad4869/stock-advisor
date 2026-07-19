@@ -8,7 +8,7 @@ import { Market } from '@/types';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'EARLY_BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE', 'MA_TREND', 'TA_ONLY', 'STEALTH_ACCUM', 'BULL_DIV', 'VOL_SPIKE', 'CONSISTENCY'];
+const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'EARLY_BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE', 'MA_TREND', 'TA_ONLY', 'STEALTH_ACCUM', 'BULL_DIV', 'VOL_SPIKE', 'CONSISTENCY', 'HIGH_YIELD_DIVIDEND'];
 const MAX_LIMIT = 50;
 
 export async function GET(request: NextRequest) {
@@ -92,7 +92,12 @@ export async function GET(request: NextRequest) {
           // 2. Sort by Fundamental Score
           const aFund = a.fundamentalScore?.total || 0;
           const bFund = b.fundamentalScore?.total || 0;
-          return bFund - aFund;
+          if (bFund !== aFund) return bFund - aFund;
+          
+          // 3. Sort by Discount from Peak
+          const aDisc = a.priceDiscountFromPeak || 0;
+          const bDisc = b.priceDiscountFromPeak || 0;
+          return bDisc - aDisc;
         } else {
           // 1. Sort by Smart Money (Accumulation Score)
           const aSmart = a.smartMoney?.accumulationScore || 0;
