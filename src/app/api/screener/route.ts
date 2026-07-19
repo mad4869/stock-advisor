@@ -83,18 +83,30 @@ export async function GET(request: NextRequest) {
     const passingStocks = allResults
       .filter(r => r.isPass && !r.error)
       .sort((a, b) => {
-        // 1. Sort by Smart Money (Accumulation Score)
-        const aSmart = a.smartMoney?.accumulationScore || 0;
-        const bSmart = b.smartMoney?.accumulationScore || 0;
-        if (bSmart !== aSmart) return bSmart - aSmart;
+        if (preset === 'HIGH_YIELD_DIVIDEND') {
+          // 1. Sort by Dividend Yield
+          const aYield = a.dividendYield || 0;
+          const bYield = b.dividendYield || 0;
+          if (bYield !== aYield) return bYield - aYield;
 
-        // 2. Sort by TA Score
-        if (b.taScore !== a.taScore) return b.taScore - a.taScore;
-
-        // 3. Sort by Fundamental Score
-        const aFund = a.fundamentalScore?.total || 0;
-        const bFund = b.fundamentalScore?.total || 0;
-        return bFund - aFund;
+          // 2. Sort by Fundamental Score
+          const aFund = a.fundamentalScore?.total || 0;
+          const bFund = b.fundamentalScore?.total || 0;
+          return bFund - aFund;
+        } else {
+          // 1. Sort by Smart Money (Accumulation Score)
+          const aSmart = a.smartMoney?.accumulationScore || 0;
+          const bSmart = b.smartMoney?.accumulationScore || 0;
+          if (bSmart !== aSmart) return bSmart - aSmart;
+  
+          // 2. Sort by TA Score
+          if (b.taScore !== a.taScore) return b.taScore - a.taScore;
+  
+          // 3. Sort by Fundamental Score
+          const aFund = a.fundamentalScore?.total || 0;
+          const bFund = b.fundamentalScore?.total || 0;
+          return bFund - aFund;
+        }
       });
 
     const responseData = {

@@ -257,6 +257,8 @@ export interface SwingScreenerResult {
     warnings: string[];        // non-blocking fundamental cautions
   } | null;
 
+  dividendYield?: number | null;
+
   // Analyst consensus (surfaced from ComprehensiveAnalysis)
   analystUpside?: number | null;   // % upside to analyst mean price target
   analystConsensus?: 'strong_buy' | 'buy' | 'hold' | 'sell' | 'strong_sell' | null;

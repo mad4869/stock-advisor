@@ -7,7 +7,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -153,6 +153,7 @@ async function runScreenerForSymbolRaw(
       CONSISTENCY: 60,   // must accumulate in medium window at minimum
       TA_ONLY: 0,
       DETAIL: 0,
+      HIGH_YIELD_DIVIDEND: 0,
     };
     const accThreshold = accThresholdMap[preset];
     const accumulation = computeAccumulation(history, accThreshold);
@@ -550,6 +551,15 @@ async function runScreenerForSymbolRaw(
     else if (preset === 'DETAIL') {
       taPass = false;
     }
+    else if (preset === 'HIGH_YIELD_DIVIDEND') {
+      taPass = true; // Bypass TA and Accumulation gates
+      criteria.push(
+        { label: 'Dividend Yield', value: 'Fetching...', threshold: '≥ 5.0%', passed: false },
+        { label: 'Fundamental Score', value: 'Fetching...', threshold: '≥ 60', passed: false },
+        { label: 'Discount from Peak', value: 'Fetching...', threshold: '≥ 50% from 52w High', passed: false },
+      );
+      if (taPass) signals.push('Evaluating Yield & Fundamentals...');
+    }
     else {
       // DEFAULT: just accumulation + TA score gates, no extra criteria
       criteria.push(
@@ -584,6 +594,38 @@ async function runScreenerForSymbolRaw(
             signals: fundScore.signals,
             warnings: fundScore.warnings,
           };
+          
+          result.dividendYield = analysis.dividend.dividendYield;
+
+          if (preset === 'HIGH_YIELD_DIVIDEND') {
+            const yieldPct = analysis.dividend.dividendYield ?? 0;
+            const fundTotal = fundScore.total;
+            
+            // Calculate 52-week high and discount
+            const high52Week = Math.max(...history.map(h => h.high));
+            const currentPrice = history[history.length - 1].close;
+            const priceDiscount = high52Week > 0 ? ((high52Week - currentPrice) / high52Week) * 100 : 0;
+            
+            const yieldReq = yieldPct >= 5.0;
+            const fundReq = fundTotal >= 60;
+            const discountReq = priceDiscount >= 50.0;
+            
+            taPass = yieldReq && fundReq && discountReq;
+            
+            // Update the placeholders created earlier
+            const yieldItem = criteria.find(c => c.label === 'Dividend Yield');
+            if (yieldItem) { yieldItem.passed = yieldReq; yieldItem.value = `${yieldPct.toFixed(2)}%`; }
+            const fundItem = criteria.find(c => c.label === 'Fundamental Score');
+            if (fundItem) { fundItem.passed = fundReq; fundItem.value = `${fundTotal}`; }
+            const discItem = criteria.find(c => c.label === 'Discount from Peak');
+            if (discItem) { discItem.passed = discountReq; discItem.value = `-${priceDiscount.toFixed(1)}%`; }
+            
+            if (taPass) {
+              signals.push('High Yield Value Trap Avoided');
+            } else {
+              signals.push('Failed High Yield or Fundamental Requirements');
+            }
+          }
 
           // ── Analyst Consensus ──
           result.analystUpside = fundScore.analystUpside;
