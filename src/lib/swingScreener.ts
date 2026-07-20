@@ -565,9 +565,13 @@ async function runScreenerForSymbolRaw(
       taPass = true; // Bypass TA and Accumulation gates — fundamentals-only evaluation
       criteria.push(
         { label: 'Revenue Growth (YoY)', value: 'Fetching...', threshold: '≥ 15%', passed: false },
-        { label: 'Net Margin', value: 'Fetching...', threshold: '> 0%', passed: false },
+        { label: 'Revenue CAGR (3Y)', value: 'Fetching...', threshold: '≥ 15%', passed: false },
+        { label: 'EPS CAGR (3Y)', value: 'Fetching...', threshold: '≥ 10%', passed: false },
+        { label: 'Free Cash Flow', value: 'Fetching...', threshold: '> 0', passed: false },
         { label: 'ROE', value: 'Fetching...', threshold: '≥ 15%', passed: false },
         { label: 'Valuation (PEG / Fwd PE)', value: 'Fetching...', threshold: 'PEG ≤ 1.5 or Fwd PE ≤ 25', passed: false },
+        { label: 'Debt to Equity', value: 'Fetching...', threshold: '< 1.5x', passed: false },
+        { label: 'Interest Coverage', value: 'Fetching...', threshold: '≥ 3.0x', passed: false },
         { label: 'Fundamental Score', value: 'Fetching...', threshold: '≥ 65', passed: false },
       );
       signals.push('Evaluating Growth & Quality...');
@@ -642,18 +646,26 @@ async function runScreenerForSymbolRaw(
             const fundTotal = fundScore.total;
 
             const revenueGrowth = f.revenueGrowth; // % as number e.g. 25 means 25%
-            const netMargin    = f.netProfitMargin;
+            const cagrRev3Y    = analysis.cagr.revenue3Y;
+            const cagrEps3Y    = analysis.cagr.eps3Y;
+            const fcf          = f.freeCashFlow;
             const roe          = f.roe;
             const pegRatio     = f.pegRatio;
             const forwardPE    = f.forwardPE;
+            const debtToEq     = f.debtToEquity;
+            const intCov       = analysis.interestCoverage;
 
             // Gate 1: Revenue Growth ≥ 15%
             const revGrowthPassed = revenueGrowth != null && revenueGrowth >= 15;
-            // Gate 2: Net Margin > 0%
-            const marginPassed = netMargin != null && netMargin > 0;
-            // Gate 3: ROE ≥ 15%
+            // Gate 2: Revenue CAGR (3Y) ≥ 15%
+            const revCagrPassed = cagrRev3Y != null && cagrRev3Y >= 15;
+            // Gate 3: EPS CAGR (3Y) ≥ 10%
+            const epsCagrPassed = cagrEps3Y != null && cagrEps3Y >= 10;
+            // Gate 4: Free Cash Flow > 0
+            const fcfPassed = fcf != null && fcf > 0;
+            // Gate 5: ROE ≥ 15%
             const roePassed = roe != null && roe >= 15;
-            // Gate 4: Valuation — PEG ≤ 1.5, or fall back to Forward P/E ≤ 25 if PEG missing
+            // Gate 6: Valuation — PEG ≤ 1.5, or fall back to Forward P/E ≤ 25 if PEG missing
             let valuationPassed = false;
             let valuationLabel = 'N/A';
             if (pegRatio != null) {
@@ -663,20 +675,40 @@ async function runScreenerForSymbolRaw(
               valuationPassed = forwardPE <= 25;
               valuationLabel = `Fwd PE ${Math.round(forwardPE)}x`;
             }
-            // Gate 5: Fundamental Score ≥ 65
+            // Gate 7: Debt to Equity < 1.5
+            const debtPassed = debtToEq == null || debtToEq < 1.5;
+            // Gate 8: Interest Coverage ≥ 3.0x
+            const intCovPassed = intCov == null || intCov >= 3.0;
+            // Gate 9: Fundamental Score ≥ 65
             const fundPassed = fundTotal >= 65;
 
-            taPass = revGrowthPassed && marginPassed && roePassed && valuationPassed && fundPassed;
+            taPass = revGrowthPassed && revCagrPassed && epsCagrPassed && fcfPassed && roePassed && valuationPassed && debtPassed && intCovPassed && fundPassed;
 
             // Update placeholders
             const revItem = criteria.find(c => c.label === 'Revenue Growth (YoY)');
             if (revItem) { revItem.passed = revGrowthPassed; revItem.value = revenueGrowth != null ? `${Math.round(revenueGrowth)}%` : 'N/A'; }
-            const marginItem = criteria.find(c => c.label === 'Net Margin');
-            if (marginItem) { marginItem.passed = marginPassed; marginItem.value = netMargin != null ? `${Math.round(netMargin)}%` : 'N/A'; }
+            
+            const revCagrItem = criteria.find(c => c.label === 'Revenue CAGR (3Y)');
+            if (revCagrItem) { revCagrItem.passed = revCagrPassed; revCagrItem.value = cagrRev3Y != null ? `${Math.round(cagrRev3Y)}%` : 'N/A'; }
+
+            const epsCagrItem = criteria.find(c => c.label === 'EPS CAGR (3Y)');
+            if (epsCagrItem) { epsCagrItem.passed = epsCagrPassed; epsCagrItem.value = cagrEps3Y != null ? `${Math.round(cagrEps3Y)}%` : 'N/A'; }
+
+            const fcfItem = criteria.find(c => c.label === 'Free Cash Flow');
+            if (fcfItem) { fcfItem.passed = fcfPassed; fcfItem.value = fcf != null ? (fcf > 0 ? '+ Pos' : '- Neg') : 'N/A'; }
+
             const roeItem = criteria.find(c => c.label === 'ROE');
             if (roeItem) { roeItem.passed = roePassed; roeItem.value = roe != null ? `${Math.round(roe)}%` : 'N/A'; }
+            
             const valItem = criteria.find(c => c.label === 'Valuation (PEG / Fwd PE)');
             if (valItem) { valItem.passed = valuationPassed; valItem.value = valuationLabel; }
+
+            const debtItem = criteria.find(c => c.label === 'Debt to Equity');
+            if (debtItem) { debtItem.passed = debtPassed; debtItem.value = debtToEq != null ? `${debtToEq.toFixed(2)}x` : '0x'; }
+
+            const intCovItem = criteria.find(c => c.label === 'Interest Coverage');
+            if (intCovItem) { intCovItem.passed = intCovPassed; intCovItem.value = intCov != null ? `${intCov.toFixed(1)}x` : 'N/A'; }
+
             const fundItem2 = criteria.find(c => c.label === 'Fundamental Score');
             if (fundItem2) { fundItem2.passed = fundPassed; fundItem2.value = `${fundTotal}`; }
 
