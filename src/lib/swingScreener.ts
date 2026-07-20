@@ -759,8 +759,8 @@ async function runScreenerForSymbolRaw(
         }
       } catch (err: any) {
         console.warn(`[Screener] Failed to fetch fundamentals/red flags for ${cleanSymbol}: ${err.message}`);
-        if (preset === 'HIGH_YIELD_DIVIDEND') {
-          taPass = false; // Fail the screen if fundamentals (dividend data) fail to load
+        if (preset === 'HIGH_YIELD_DIVIDEND' || preset === 'MULTI_BAGGER') {
+          taPass = false; // Fail the screen if fundamentals fail to load
         }
       }
     }
