@@ -39,10 +39,12 @@ export async function GET(request: NextRequest) {
   // 2. AUTHENTICATION / AUTHORIZATION GUARD
   // ──────────────────────────────────────────────────────────────
   const authHeader = request.headers.get('authorization');
+  const querySecret = searchParams.get('secret');
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  const isValidCronSecret = process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+  const isValidCronSecret = process.env.CRON_SECRET && 
+    (authHeader === `Bearer ${process.env.CRON_SECRET}` || querySecret === process.env.CRON_SECRET);
 
-  // Allow execution if triggered by Vercel Cron, valid Bearer secret, or force=true in development
+  // Allow execution if triggered by Vercel Cron, valid Bearer secret, valid query secret, or force=true in development
   if (!isVercelCron && !isValidCronSecret && !force && process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Unauthorized cron execution' }, { status: 401 });
   }
