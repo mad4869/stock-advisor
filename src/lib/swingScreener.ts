@@ -7,7 +7,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND' | 'MULTI_BAGGER';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -154,6 +154,7 @@ async function runScreenerForSymbolRaw(
       TA_ONLY: 0,
       DETAIL: 0,
       HIGH_YIELD_DIVIDEND: 0,
+      MULTI_BAGGER: 0,   // fundamentals-only gate; smart money is irrelevant
     };
     const accThreshold = accThresholdMap[preset];
     const accumulation = computeAccumulation(history, accThreshold);
@@ -162,8 +163,8 @@ async function runScreenerForSymbolRaw(
     // Early exit: if not accumulating, skip full TA computation.
     // This is both architecturally correct (follow smart money first)
     // and a performance optimization for large universes.
-    // Exception: TA_ONLY, DETAIL, and HIGH_YIELD_DIVIDEND presets ignore the smart money gate entirely.
-    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND') {
+    // Exception: TA_ONLY, DETAIL, HIGH_YIELD_DIVIDEND, and MULTI_BAGGER presets ignore the smart money gate entirely.
+    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND' && preset !== 'MULTI_BAGGER') {
       result.isPass = false;
       return result;
     }
@@ -182,10 +183,10 @@ async function runScreenerForSymbolRaw(
       return result;
     }
 
-    // Absolute volume floor check — skipped for DETAIL and HIGH_YIELD_DIVIDEND preset
+    // Absolute volume floor check — skipped for DETAIL, HIGH_YIELD_DIVIDEND, and MULTI_BAGGER presets
     // so the stock detail page always receives full TA data regardless of liquidity.
     result.taData = ta;
-    if (preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND' && ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
+    if (preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND' && preset !== 'MULTI_BAGGER' && ta.volume20Avg && ta.volume20Avg < config.minVolume20Avg) {
       result.error = 'Insufficient liquidity';
       return result;
     }
@@ -560,6 +561,17 @@ async function runScreenerForSymbolRaw(
       );
       if (taPass) signals.push('Evaluating Yield & Fundamentals...');
     }
+    else if (preset === 'MULTI_BAGGER') {
+      taPass = true; // Bypass TA and Accumulation gates — fundamentals-only evaluation
+      criteria.push(
+        { label: 'Revenue Growth (YoY)', value: 'Fetching...', threshold: '≥ 15%', passed: false },
+        { label: 'Net Margin', value: 'Fetching...', threshold: '> 0%', passed: false },
+        { label: 'ROE', value: 'Fetching...', threshold: '≥ 15%', passed: false },
+        { label: 'Valuation (PEG / Fwd PE)', value: 'Fetching...', threshold: 'PEG ≤ 1.5 or Fwd PE ≤ 25', passed: false },
+        { label: 'Fundamental Score', value: 'Fetching...', threshold: '≥ 65', passed: false },
+      );
+      signals.push('Evaluating Growth & Quality...');
+    }
     else {
       // DEFAULT: just accumulation + TA score gates, no extra criteria
       criteria.push(
@@ -622,6 +634,54 @@ async function runScreenerForSymbolRaw(
               signals.push('High Yield Screen Passed');
             } else {
               signals.push(`Failed High Yield Requirement (${yieldPct.toFixed(2)}% < 5.0%)`);
+            }
+          }
+
+          if (preset === 'MULTI_BAGGER') {
+            const f = analysis.fundamentals;
+            const fundTotal = fundScore.total;
+
+            const revenueGrowth = f.revenueGrowth; // % as number e.g. 25 means 25%
+            const netMargin    = f.netProfitMargin;
+            const roe          = f.roe;
+            const pegRatio     = f.pegRatio;
+            const forwardPE    = f.forwardPE;
+
+            // Gate 1: Revenue Growth ≥ 15%
+            const revGrowthPassed = revenueGrowth != null && revenueGrowth >= 15;
+            // Gate 2: Net Margin > 0%
+            const marginPassed = netMargin != null && netMargin > 0;
+            // Gate 3: ROE ≥ 15%
+            const roePassed = roe != null && roe >= 15;
+            // Gate 4: Valuation — PEG ≤ 1.5, or fall back to Forward P/E ≤ 25 if PEG missing
+            let valuationPassed = false;
+            let valuationLabel = 'N/A';
+            if (pegRatio != null) {
+              valuationPassed = pegRatio <= 1.5;
+              valuationLabel = `PEG ${pegRatio.toFixed(2)}`;
+            } else if (forwardPE != null) {
+              valuationPassed = forwardPE <= 25;
+              valuationLabel = `Fwd PE ${Math.round(forwardPE)}x`;
+            }
+            // Gate 5: Fundamental Score ≥ 65
+            const fundPassed = fundTotal >= 65;
+
+            taPass = revGrowthPassed && marginPassed && roePassed && valuationPassed && fundPassed;
+
+            // Update placeholders
+            const revItem = criteria.find(c => c.label === 'Revenue Growth (YoY)');
+            if (revItem) { revItem.passed = revGrowthPassed; revItem.value = revenueGrowth != null ? `${Math.round(revenueGrowth)}%` : 'N/A'; }
+            const marginItem = criteria.find(c => c.label === 'Net Margin');
+            if (marginItem) { marginItem.passed = marginPassed; marginItem.value = netMargin != null ? `${Math.round(netMargin)}%` : 'N/A'; }
+            const roeItem = criteria.find(c => c.label === 'ROE');
+            if (roeItem) { roeItem.passed = roePassed; roeItem.value = roe != null ? `${Math.round(roe)}%` : 'N/A'; }
+            const valItem = criteria.find(c => c.label === 'Valuation (PEG / Fwd PE)');
+            if (valItem) { valItem.passed = valuationPassed; valItem.value = valuationLabel; }
+            const fundItem2 = criteria.find(c => c.label === 'Fundamental Score');
+            if (fundItem2) { fundItem2.passed = fundPassed; fundItem2.value = `${fundTotal}`; }
+
+            if (taPass) {
+              signals.push(`Growth Compounder (RevGrowth ${Math.round(revenueGrowth!)}%, ROE ${Math.round(roe!)}%, ${valuationLabel})`);
             }
           }
 
