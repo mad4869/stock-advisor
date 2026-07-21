@@ -8,7 +8,7 @@ import { Market } from '@/types';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'EARLY_BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE', 'MA_TREND', 'TA_ONLY', 'STEALTH_ACCUM', 'BULL_DIV', 'VOL_SPIKE', 'CONSISTENCY', 'HIGH_YIELD_DIVIDEND', 'MULTI_BAGGER'];
+const VALID_PRESETS: Preset[] = ['DEFAULT', 'BREAKOUT', 'EARLY_BREAKOUT', 'OVERSOLD', 'SMART_MONEY', 'VOLUME_CLIMAX', 'SHORT_SQUEEZE', 'MA_TREND', 'TA_ONLY', 'STEALTH_ACCUM', 'BULL_DIV', 'VOL_SPIKE', 'CONSISTENCY', 'HIGH_YIELD_DIVIDEND'];
 const MAX_LIMIT = 50;
 
 export async function GET(request: NextRequest) {
@@ -98,25 +98,6 @@ export async function GET(request: NextRequest) {
           const aDisc = a.priceDiscountFromPeak || 0;
           const bDisc = b.priceDiscountFromPeak || 0;
           return bDisc - aDisc;
-        } else if (preset === 'MULTI_BAGGER') {
-          // 1. Sort by Fundamental Score (highest quality first)
-          const aFund = a.fundamentalScore?.total || 0;
-          const bFund = b.fundamentalScore?.total || 0;
-          if (bFund !== aFund) return bFund - aFund;
-
-          // 2. Sort by Revenue Growth (fastest growers next)
-          const aRev = a.presetCriteria?.find(c => c.label === 'Revenue Growth (YoY)')?.value;
-          const bRev = b.presetCriteria?.find(c => c.label === 'Revenue Growth (YoY)')?.value;
-          const aRevNum = aRev ? parseFloat(aRev) : 0;
-          const bRevNum = bRev ? parseFloat(bRev) : 0;
-          if (bRevNum !== aRevNum) return bRevNum - aRevNum;
-
-          // 3. Sort by PEG (lowest = best value, ascending)
-          const aPeg = a.presetCriteria?.find(c => c.label === 'Valuation (PEG / Fwd PE)')?.value || '';
-          const bPeg = b.presetCriteria?.find(c => c.label === 'Valuation (PEG / Fwd PE)')?.value || '';
-          const aPegNum = parseFloat(aPeg.replace(/[^0-9.]/g, '')) || 999;
-          const bPegNum = parseFloat(bPeg.replace(/[^0-9.]/g, '')) || 999;
-          return aPegNum - bPegNum;
         } else {
           // 1. Sort by Smart Money (Accumulation Score)
           const aSmart = a.smartMoney?.accumulationScore || 0;
