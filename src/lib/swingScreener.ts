@@ -288,7 +288,42 @@ async function runScreenerForSymbolRaw(
       signals.push('Near Pivot Support');
     }
 
-    const totalTaScore = Math.round(trendScore + volScore + momScore + structScore);
+    // MA Proximity & Pullbacks
+    const dist20 = ta.distFromEMA20;
+    const dist50 = ta.distFromEMA50;
+    const dist200 = ta.distFromEMA200;
+
+    // Rule 5: Avoid stocks below all MAs (Massive Penalty)
+    if (dist20 != null && dist50 != null && dist200 != null) {
+      if (dist20 < 0 && dist50 < 0 && dist200 < 0) {
+        trendScore -= 15; // Severe penalty for being below all MAs
+        signals.push('Below All Major MAs (Downtrend)');
+      }
+    }
+
+    // Rule 2: Enter stocks near MA (Pullback Bonus)
+    // A perfect pullback is when the stock is in an uptrend (EMA20 > EMA50) but pulling back to the EMA20 or EMA50.
+    const isUptrend = ta.ema20 && ta.ema50 && ta.ema20 > ta.ema50;
+    if (isUptrend) {
+      if (dist20 !== null && dist20 >= 0 && dist20 <= 3.5) {
+        trendScore += 5;
+        signals.push(`Perfect Pullback to EMA20 (+${dist20.toFixed(1)}%)`);
+      } else if (dist50 !== null && dist50 >= 0 && dist50 <= 3.5) {
+        trendScore += 5;
+        signals.push(`Perfect Pullback to EMA50 (+${dist50.toFixed(1)}%)`);
+      }
+    }
+    
+    // Rule 1: Avoid stocks far from MA (Overextended Penalty)
+    if (dist20 !== null && dist20 > 20) {
+      trendScore -= 5;
+      signals.push(`Overextended (+${dist20.toFixed(1)}% from EMA20)`);
+    } else if (dist50 !== null && dist50 > 30) {
+      trendScore -= 5;
+      signals.push(`Overextended (+${dist50.toFixed(1)}% from EMA50)`);
+    }
+
+    const totalTaScore = Math.min(100, Math.max(0, Math.round(trendScore + volScore + momScore + structScore)));
     result.taScore = totalTaScore;
 
     // ──────────────────────────────────────────────
@@ -406,7 +441,8 @@ async function runScreenerForSymbolRaw(
       const aboveSma50 = ta.sma50 != null ? price > ta.sma50 : false;
       const aboveSma200 = ta.sma200 != null ? price > ta.sma200 : false;
       const allMaAbove = aboveEma20 && aboveEma50 && aboveEma200 && aboveSma20 && aboveSma50 && aboveSma200;
-      taPass = taPass && allMaAbove;
+      const isOverextended = ta.distFromEMA20 != null && ta.distFromEMA20 > 20;
+      taPass = taPass && allMaAbove && !isOverextended;
       criteria.push(
         { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 50', passed: totalTaScore >= 50 },
         { label: 'Price vs EMA20', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.ema20 ? fmt(ta.ema20, isId) : '—'}`, passed: aboveEma20 },
@@ -416,8 +452,10 @@ async function runScreenerForSymbolRaw(
         { label: 'Price vs SMA50', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.sma50 ? fmt(ta.sma50, isId) : '—'}`, passed: aboveSma50 },
         { label: 'Price vs SMA200', value: `${cur}${fmt(price, isId)}`, threshold: `> ${cur}${ta.sma200 ? fmt(ta.sma200, isId) : '—'}`, passed: aboveSma200 },
         { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+        { label: 'MA Proximity', value: ta.distFromEMA20 != null ? `+${ta.distFromEMA20.toFixed(1)}%` : '—', threshold: '≤ +20% (Not Extended)', passed: !isOverextended },
       );
       if (taPass) signals.push('Above All MAs (EMA & SMA)');
+      if (isOverextended) signals.push('Rejected: Price too extended from EMA20');
     }
     else if (preset === 'STEALTH_ACCUM') {
       // Stealth Accumulation — finds stocks where smart money is quietly
@@ -563,11 +601,15 @@ async function runScreenerForSymbolRaw(
 
     else {
       // DEFAULT: just accumulation + TA score gates, no extra criteria
+      const isOverextended = ta.distFromEMA20 != null && ta.distFromEMA20 > 20;
+      taPass = taPass && !isOverextended;
       criteria.push(
         { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
         { label: 'TA Score', value: `${totalTaScore}`, threshold: '≥ 60', passed: totalTaScore >= 60 },
         { label: 'Signals Bullish', value: `${accumulation.signalCount}/5`, threshold: '≥ 3/5', passed: accumulation.signalCount >= 3 },
+        { label: 'MA Proximity', value: ta.distFromEMA20 != null ? `+${ta.distFromEMA20.toFixed(1)}%` : '—', threshold: '≤ +20% (Not Extended)', passed: !isOverextended },
       );
+      if (isOverextended) signals.push('Rejected: Price too extended from EMA20');
     }
 
     if (taPass) {

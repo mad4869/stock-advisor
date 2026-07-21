@@ -84,6 +84,11 @@ export interface TAData {
   emaCrossoverRecency: number | null;
   priceCrossoverRecency: number | null;
   macdCrossoverRecency: number | null;
+
+  // Moving Average Proximity (Percentage distance from MA)
+  distFromEMA20: number | null;
+  distFromEMA50: number | null;
+  distFromEMA200: number | null;
 }
 
 export function calculateTA(historicalData: any[], market?: Market): TAData | null {
@@ -439,6 +444,11 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
   const macdSignals = macdData.map(d => d.signal ?? 0);
   const macdCrossoverRecency = findCrossoverRecency(macdLines, macdSignals, 20);
 
+  // MA Proximity
+  const distFromEMA20 = ema20 ? ((currentClose - ema20) / ema20) * 100 : null;
+  const distFromEMA50 = ema50 ? ((currentClose - ema50) / ema50) * 100 : null;
+  const distFromEMA200 = ema200 ? ((currentClose - ema200) / ema200) * 100 : null;
+
   return {
     close: currentClose,
     high: currentHigh,
@@ -485,7 +495,10 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     fibonacciLevels,
     emaCrossoverRecency,
     priceCrossoverRecency,
-    macdCrossoverRecency
+    macdCrossoverRecency,
+    distFromEMA20,
+    distFromEMA50,
+    distFromEMA200
   };
 }
 
