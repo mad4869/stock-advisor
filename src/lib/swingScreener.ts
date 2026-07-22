@@ -325,6 +325,12 @@ async function runScreenerForSymbolRaw(
 
     const totalTaScore = Math.min(100, Math.max(0, Math.round(trendScore + volScore + momScore + structScore)));
     result.taScore = totalTaScore;
+    result.taScoreBreakdown = {
+      trend: Math.round(trendScore),
+      volume: Math.round(volScore),
+      momentum: Math.round(momScore),
+      structure: Math.round(structScore)
+    };
 
     // ──────────────────────────────────────────────
     // STEP 5: Evaluate Presets

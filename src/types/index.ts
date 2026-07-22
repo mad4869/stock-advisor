@@ -222,6 +222,12 @@ export interface SwingScreenerResult {
   symbol: string;
   market: Market;
   taScore: number;
+  taScoreBreakdown?: {
+    trend: number;
+    volume: number;
+    momentum: number;
+    structure: number;
+  };
   taData: any;
   smartMoney: {
     accumulationScore: number;

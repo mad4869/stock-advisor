@@ -249,6 +249,28 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                       {Math.round(screener.taScore)}
                     </div>
                   </div>
+
+                  {screener.taScoreBreakdown && (
+                    <div className="mt-5 w-full px-6 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                      <div className="flex justify-between border-b border-dark-600 pb-1">
+                        <span className="text-gray-400">Trend</span>
+                        <span className="text-white font-medium">{screener.taScoreBreakdown.trend}/30</span>
+                      </div>
+                      <div className="flex justify-between border-b border-dark-600 pb-1">
+                        <span className="text-gray-400">Volume</span>
+                        <span className="text-white font-medium">{screener.taScoreBreakdown.volume}/30</span>
+                      </div>
+                      <div className="flex justify-between border-b border-dark-600 pb-1">
+                        <span className="text-gray-400">Momentum</span>
+                        <span className="text-white font-medium">{screener.taScoreBreakdown.momentum}/25</span>
+                      </div>
+                      <div className="flex justify-between border-b border-dark-600 pb-1">
+                        <span className="text-gray-400">Structure</span>
+                        <span className="text-white font-medium">{screener.taScoreBreakdown.structure}/15</span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-6 flex flex-wrap gap-2 justify-center">
                     {screener.signals.length === 0 ? (
                       <span className="text-gray-500 text-sm">No specific setup signals detected</span>
