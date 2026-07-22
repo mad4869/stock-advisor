@@ -228,6 +228,13 @@ export interface SwingScreenerResult {
     momentum: number;
     structure: number;
   };
+  taScoreItems?: {
+    label: string;
+    category: 'trend' | 'volume' | 'momentum' | 'structure';
+    points: number;
+    max: number;
+    passed: boolean;
+  }[];
   taData: any;
   smartMoney: {
     accumulationScore: number;

@@ -198,6 +198,8 @@ async function runScreenerForSymbolRaw(
     let momScore = 0;   // max 25
     let structScore = 0; // max 15
     const signals: string[] = [];
+    // Individual breakdown items: { label, category, points, max, passed }
+    const taScoreItems: { label: string; category: 'trend' | 'volume' | 'momentum' | 'structure'; points: number; max: number; passed: boolean }[] = [];
 
     // Add accumulation-specific signals
     if (accumulation.accumulationScore >= 80) signals.push('Strong Accumulation');
@@ -207,121 +209,203 @@ async function runScreenerForSymbolRaw(
 
     // Trend
     const price = ta.close;
-    if (ta.ema20 && price > ta.ema20) trendScore += 10;
-    if (ta.ema50 && ta.ema20 && ta.ema20 > ta.ema50) trendScore += 10;
-    if (ta.ema200 && ta.ema50 && ta.ema50 > ta.ema200) trendScore += 5;
+    const t1 = ta.ema20 && price > ta.ema20;
+    if (t1) trendScore += 10;
+    taScoreItems.push({ label: 'Price > EMA20', category: 'trend', points: t1 ? 10 : 0, max: 10, passed: !!t1 });
+
+    const t2 = ta.ema50 && ta.ema20 && ta.ema20 > ta.ema50;
+    if (t2) trendScore += 10;
+    taScoreItems.push({ label: 'EMA20 > EMA50 (Short-term uptrend)', category: 'trend', points: t2 ? 10 : 0, max: 10, passed: !!t2 });
+
+    const t3 = ta.ema200 && ta.ema50 && ta.ema50 > ta.ema200;
+    if (t3) trendScore += 5;
+    taScoreItems.push({ label: 'EMA50 > EMA200 (Long-term uptrend)', category: 'trend', points: t3 ? 5 : 0, max: 5, passed: !!t3 });
+
     if (ta.supertrendBullish) {
       trendScore += 5;
       signals.push('Supertrend Bullish');
     }
+    taScoreItems.push({ label: 'Supertrend Bullish', category: 'trend', points: ta.supertrendBullish ? 5 : 0, max: 5, passed: !!ta.supertrendBullish });
 
     // Trend Crossover Recency Weighting (Bonuses)
+    let crossoverPoints = 0;
+    let crossoverLabel = 'No recent crossovers';
     if (ta.emaCrossoverRecency !== null && ta.emaCrossoverRecency <= 10) {
       const bonus = ta.emaCrossoverRecency <= 5 ? 5 : 3;
       trendScore += bonus;
+      crossoverPoints += bonus;
+      crossoverLabel = `Golden Cross ${ta.emaCrossoverRecency}d ago`;
       signals.push(`Recent Golden Cross (${ta.emaCrossoverRecency}d ago)`);
     }
     if (ta.macdCrossoverRecency !== null && ta.macdCrossoverRecency <= 10) {
       const bonus = ta.macdCrossoverRecency <= 5 ? 5 : 3;
       trendScore += bonus;
+      crossoverPoints += bonus;
+      crossoverLabel += crossoverLabel === 'No recent crossovers' ? `MACD Cross ${ta.macdCrossoverRecency}d ago` : ` + MACD Cross ${ta.macdCrossoverRecency}d ago`;
       signals.push(`Recent MACD Bullish Cross (${ta.macdCrossoverRecency}d ago)`);
     }
     if (ta.priceCrossoverRecency !== null && ta.priceCrossoverRecency <= 5) {
       trendScore += 3;
+      crossoverPoints += 3;
+      crossoverLabel += crossoverLabel === 'No recent crossovers' ? `Price/EMA20 Cross ${ta.priceCrossoverRecency}d ago` : ` + Price/EMA20 ${ta.priceCrossoverRecency}d ago`;
       signals.push(`Recent Price EMA20 Cross (${ta.priceCrossoverRecency}d ago)`);
     }
+    taScoreItems.push({ label: `Recent Crossovers (${crossoverLabel})`, category: 'trend', points: crossoverPoints, max: 13, passed: crossoverPoints > 0 });
 
-    // Volume
-    if (ta.volumeRatio) {
-      if (ta.volumeRatio >= config.volumeRatioSurge) { volScore += 15; signals.push('Volume Surge'); }
-      else if (ta.volumeRatio >= config.volumeRatioBullish) volScore += 10;
-      else if (ta.volumeRatio >= 1.0) volScore += 5;
-    }
-    if (ta.obvTrendPositive) volScore += 10;
-    if (ta.mfi && ta.mfi > 50) volScore += 5;
-
-    // Momentum
-    if (ta.rsi) {
-      const rsiVal = ta.rsi;
-      const overbought = config.rsiOverbought;
-      const midHigh = overbought - 5;
-      const upperLimit = overbought + 10;
-      
-      let rsiScore = 0;
-      if (rsiVal < 30) {
-        rsiScore = 0;
-        signals.push('RSI Weak');
-      } else if (rsiVal < 45) {
-        rsiScore = ((rsiVal - 30) / 15) * 10;
-        if (rsiVal < 40) signals.push('RSI Weak');
-      } else if (rsiVal <= midHigh) {
-        rsiScore = 10;
-      } else if (rsiVal <= overbought) {
-        const ratio = (rsiVal - midHigh) / (overbought - midHigh);
-        rsiScore = 10 - ratio * 5;
-        signals.push('RSI Extended');
-      } else if (rsiVal <= upperLimit) {
-        const ratio = (rsiVal - overbought) / (upperLimit - overbought);
-        rsiScore = 5 - ratio * 5;
-        signals.push('RSI Overbought');
-      } else {
-        rsiScore = 0;
-        signals.push('RSI Overbought');
-      }
-      
-      momScore += rsiScore;
-    }
-    if (ta.stochRecovery) {
-      momScore += 10;
-      signals.push('Stochastic Oversold Recovery');
-    } else if (ta.stochK && ta.stochD && ta.stochK > ta.stochD) {
-      momScore += 5;
-    }
-    if (ta.cci && ta.cci > 0) momScore += 5;
-
-    // Structure
-    if (ta.atrPercent && ta.atrPercent >= config.minAtrPercent && ta.atrPercent <= config.maxAtrPercent) structScore += 5;
-    if (ta.bollingerB && ta.bollingerB > 0.4 && ta.bollingerB < 0.9) structScore += 5;
-    if (ta.distanceTo52wHigh && ta.distanceTo52wHigh > 0.03) structScore += 2;
-    if (ta.distanceToS1 && ta.distanceToS1 >= 0 && ta.distanceToS1 <= 0.05) {
-      structScore += 3;
-      signals.push('Near Pivot Support');
-    }
-
-    // MA Proximity & Pullbacks
+    // MA Proximity & Pullbacks (in trend section)
     const dist20 = ta.distFromEMA20;
     const dist50 = ta.distFromEMA50;
     const dist200 = ta.distFromEMA200;
 
     // Rule 5: Avoid stocks below all MAs (Massive Penalty)
+    let belowAllMas = false;
     if (dist20 != null && dist50 != null && dist200 != null) {
       if (dist20 < 0 && dist50 < 0 && dist200 < 0) {
-        trendScore -= 15; // Severe penalty for being below all MAs
+        trendScore -= 15;
+        belowAllMas = true;
         signals.push('Below All Major MAs (Downtrend)');
       }
     }
+    if (belowAllMas) {
+      taScoreItems.push({ label: 'Below all major MAs (penalty)', category: 'trend', points: -15, max: 0, passed: false });
+    }
 
     // Rule 2: Enter stocks near MA (Pullback Bonus)
-    // A perfect pullback is when the stock is in an uptrend (EMA20 > EMA50) but pulling back to the EMA20 or EMA50.
     const isUptrend = ta.ema20 && ta.ema50 && ta.ema20 > ta.ema50;
+    let pullbackPoints = 0;
+    let pullbackLabel = 'No pullback detected';
     if (isUptrend) {
       if (dist20 !== null && dist20 >= 0 && dist20 <= 3.5) {
         trendScore += 5;
+        pullbackPoints = 5;
+        pullbackLabel = `Pullback to EMA20 (+${dist20.toFixed(1)}%)`;
         signals.push(`Perfect Pullback to EMA20 (+${dist20.toFixed(1)}%)`);
       } else if (dist50 !== null && dist50 >= 0 && dist50 <= 3.5) {
         trendScore += 5;
+        pullbackPoints = 5;
+        pullbackLabel = `Pullback to EMA50 (+${dist50.toFixed(1)}%)`;
         signals.push(`Perfect Pullback to EMA50 (+${dist50.toFixed(1)}%)`);
       }
     }
-    
-    // Rule 1: Avoid stocks far from MA (Overextended Penalty)
+    if (pullbackPoints > 0) {
+      taScoreItems.push({ label: `MA Pullback Bonus (${pullbackLabel})`, category: 'trend', points: pullbackPoints, max: 5, passed: true });
+    }
+
+    // Rule 1: Overextended Penalty
+    let overextPoints = 0;
+    let overextLabel = 'Not overextended';
     if (dist20 !== null && dist20 > 20) {
       trendScore -= 5;
+      overextPoints = -5;
+      overextLabel = `+${dist20.toFixed(1)}% from EMA20`;
       signals.push(`Overextended (+${dist20.toFixed(1)}% from EMA20)`);
     } else if (dist50 !== null && dist50 > 30) {
       trendScore -= 5;
+      overextPoints = -5;
+      overextLabel = `+${dist50.toFixed(1)}% from EMA50`;
       signals.push(`Overextended (+${dist50.toFixed(1)}% from EMA50)`);
     }
+    if (overextPoints < 0) {
+      taScoreItems.push({ label: `Overextended penalty (${overextLabel})`, category: 'trend', points: overextPoints, max: 0, passed: false });
+    }
+
+    // Volume
+    let volRatioPoints = 0;
+    let volRatioLabel = 'No data';
+    if (ta.volumeRatio) {
+      if (ta.volumeRatio >= config.volumeRatioSurge) {
+        volScore += 15; volRatioPoints = 15; volRatioLabel = `${ta.volumeRatio.toFixed(1)}x avg (Surge)`;
+        signals.push('Volume Surge');
+      } else if (ta.volumeRatio >= config.volumeRatioBullish) {
+        volScore += 10; volRatioPoints = 10; volRatioLabel = `${ta.volumeRatio.toFixed(1)}x avg (Bullish)`;
+      } else if (ta.volumeRatio >= 1.0) {
+        volScore += 5; volRatioPoints = 5; volRatioLabel = `${ta.volumeRatio.toFixed(1)}x avg (Moderate)`;
+      } else {
+        volRatioLabel = `${ta.volumeRatio.toFixed(1)}x avg (Weak)`;
+      }
+    }
+    taScoreItems.push({ label: `Volume Ratio (${volRatioLabel})`, category: 'volume', points: volRatioPoints, max: 15, passed: volRatioPoints > 0 });
+
+    const v2 = ta.obvTrendPositive;
+    if (v2) volScore += 10;
+    taScoreItems.push({ label: 'OBV Trend Positive', category: 'volume', points: v2 ? 10 : 0, max: 10, passed: !!v2 });
+
+    const v3 = ta.mfi && ta.mfi > 50;
+    if (v3) volScore += 5;
+    taScoreItems.push({ label: `MFI > 50 (${ta.mfi?.toFixed(1) ?? '—'})`, category: 'volume', points: v3 ? 5 : 0, max: 5, passed: !!v3 });
+
+    // Momentum — RSI
+    let rsiPoints = 0;
+    let rsiLabel = 'N/A';
+    if (ta.rsi) {
+      const rsiVal = ta.rsi;
+      const overbought = config.rsiOverbought;
+      const midHigh = overbought - 5;
+      const upperLimit = overbought + 10;
+      let rsiScore = 0;
+      if (rsiVal < 30) {
+        rsiScore = 0; rsiLabel = `${rsiVal.toFixed(1)} (Oversold/Weak)`;
+        signals.push('RSI Weak');
+      } else if (rsiVal < 45) {
+        rsiScore = ((rsiVal - 30) / 15) * 10;
+        rsiLabel = `${rsiVal.toFixed(1)} (Building)`;
+        if (rsiVal < 40) signals.push('RSI Weak');
+      } else if (rsiVal <= midHigh) {
+        rsiScore = 10; rsiLabel = `${rsiVal.toFixed(1)} (Bullish zone)`;
+      } else if (rsiVal <= overbought) {
+        const ratio = (rsiVal - midHigh) / (overbought - midHigh);
+        rsiScore = 10 - ratio * 5;
+        rsiLabel = `${rsiVal.toFixed(1)} (Extended)`;
+        signals.push('RSI Extended');
+      } else if (rsiVal <= upperLimit) {
+        const ratio = (rsiVal - overbought) / (upperLimit - overbought);
+        rsiScore = 5 - ratio * 5;
+        rsiLabel = `${rsiVal.toFixed(1)} (Overbought)`;
+        signals.push('RSI Overbought');
+      } else {
+        rsiScore = 0; rsiLabel = `${rsiVal.toFixed(1)} (Extreme OB)`;
+        signals.push('RSI Overbought');
+      }
+      momScore += rsiScore;
+      rsiPoints = rsiScore;
+    }
+    taScoreItems.push({ label: `RSI (${rsiLabel})`, category: 'momentum', points: Math.round(rsiPoints), max: 10, passed: rsiPoints > 5 });
+
+    let stochPoints = 0;
+    let stochLabel = 'No signal';
+    if (ta.stochRecovery) {
+      momScore += 10; stochPoints = 10; stochLabel = 'Oversold Recovery';
+      signals.push('Stochastic Oversold Recovery');
+    } else if (ta.stochK && ta.stochD && ta.stochK > ta.stochD) {
+      momScore += 5; stochPoints = 5; stochLabel = 'K > D (Bullish)';
+    } else {
+      stochLabel = 'Bearish / Neutral';
+    }
+    taScoreItems.push({ label: `Stochastic (${stochLabel})`, category: 'momentum', points: stochPoints, max: 10, passed: stochPoints > 0 });
+
+    const m3 = ta.cci && ta.cci > 0;
+    if (m3) momScore += 5;
+    taScoreItems.push({ label: `CCI > 0 (${ta.cci?.toFixed(1) ?? '—'})`, category: 'momentum', points: m3 ? 5 : 0, max: 5, passed: !!m3 });
+
+    // Structure
+    const s1 = ta.atrPercent && ta.atrPercent >= config.minAtrPercent && ta.atrPercent <= config.maxAtrPercent;
+    if (s1) structScore += 5;
+    taScoreItems.push({ label: `ATR% in range (${ta.atrPercent?.toFixed(1) ?? '—'}%)`, category: 'structure', points: s1 ? 5 : 0, max: 5, passed: !!s1 });
+
+    const s2 = ta.bollingerB && ta.bollingerB > 0.4 && ta.bollingerB < 0.9;
+    if (s2) structScore += 5;
+    taScoreItems.push({ label: `Bollinger %B mid-zone (${ta.bollingerB?.toFixed(2) ?? '—'})`, category: 'structure', points: s2 ? 5 : 0, max: 5, passed: !!s2 });
+
+    const s3 = ta.distanceTo52wHigh && ta.distanceTo52wHigh > 0.03;
+    if (s3) structScore += 2;
+    taScoreItems.push({ label: `Room to 52w High (${ta.distanceTo52wHigh != null ? `${(ta.distanceTo52wHigh * 100).toFixed(1)}% away` : '—'})`, category: 'structure', points: s3 ? 2 : 0, max: 2, passed: !!s3 });
+
+    const s4 = ta.distanceToS1 && ta.distanceToS1 >= 0 && ta.distanceToS1 <= 0.05;
+    if (s4) {
+      structScore += 3;
+      signals.push('Near Pivot Support');
+    }
+    taScoreItems.push({ label: `Near Pivot S1 (${ta.distanceToS1 != null ? `${(ta.distanceToS1 * 100).toFixed(1)}% from S1` : '—'})`, category: 'structure', points: s4 ? 3 : 0, max: 3, passed: !!s4 });
 
     const totalTaScore = Math.min(100, Math.max(0, Math.round(trendScore + volScore + momScore + structScore)));
     result.taScore = totalTaScore;
@@ -331,6 +415,7 @@ async function runScreenerForSymbolRaw(
       momentum: Math.round(momScore),
       structure: Math.round(structScore)
     };
+    result.taScoreItems = taScoreItems;
 
     // ──────────────────────────────────────────────
     // STEP 5: Evaluate Presets

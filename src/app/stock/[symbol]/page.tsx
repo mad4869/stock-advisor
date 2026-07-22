@@ -250,26 +250,71 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                     </div>
                   </div>
 
-                  {screener.taScoreBreakdown && (
-                    <div className="mt-5 w-full px-6 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-                      <div className="flex justify-between border-b border-dark-600 pb-1">
-                        <span className="text-gray-400">Trend</span>
-                        <span className="text-white font-medium">{screener.taScoreBreakdown.trend}/30</span>
+                  {(screener.taScoreBreakdown || screener.taScoreItems) && (() => {
+                    const breakdown = screener.taScoreBreakdown;
+                    const items = screener.taScoreItems ?? [];
+                    const categories = [
+                      { key: 'trend' as const, label: 'Trend', max: 30, color: 'blue' },
+                      { key: 'volume' as const, label: 'Volume', max: 30, color: 'purple' },
+                      { key: 'momentum' as const, label: 'Momentum', max: 25, color: 'orange' },
+                      { key: 'structure' as const, label: 'Structure', max: 15, color: 'teal' },
+                    ];
+                    const colorMap: Record<string, { bar: string; badge: string; text: string }> = {
+                      blue:   { bar: 'bg-blue-500',   badge: 'bg-blue-500/20 text-blue-400',   text: 'text-blue-400' },
+                      purple: { bar: 'bg-purple-500', badge: 'bg-purple-500/20 text-purple-400', text: 'text-purple-400' },
+                      orange: { bar: 'bg-orange-500', badge: 'bg-orange-500/20 text-orange-400', text: 'text-orange-400' },
+                      teal:   { bar: 'bg-teal-500',   badge: 'bg-teal-500/20 text-teal-400',   text: 'text-teal-400' },
+                    };
+                    return (
+                      <div className="mt-5 w-full px-4 space-y-4 text-xs">
+                        {categories.map(({ key, label, max, color }) => {
+                          const score = breakdown ? (breakdown as any)[key] : null;
+                          const catItems = items.filter(i => i.category === key);
+                          const clr = colorMap[color];
+                          const pct = score != null ? Math.max(0, Math.min(100, (score / max) * 100)) : 0;
+                          return (
+                            <div key={key} className="bg-dark-800 rounded-xl border border-dark-600 p-3">
+                              {/* Category header with mini bar */}
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`font-bold uppercase tracking-wider text-[10px] ${clr.text}`}>{label}</span>
+                                {score != null && (
+                                  <span className={`px-2 py-0.5 rounded-full font-semibold text-[11px] ${clr.badge}`}>
+                                    {score}/{max}
+                                  </span>
+                                )}
+                              </div>
+                              {score != null && (
+                                <div className="h-1.5 bg-dark-600 rounded-full mb-3 overflow-hidden">
+                                  <div className={`h-full ${clr.bar} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                                </div>
+                              )}
+                              {/* Per-item list */}
+                              {catItems.length > 0 ? (
+                                <div className="space-y-1.5">
+                                  {catItems.map((item, i) => (
+                                    <div key={i} className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className={`shrink-0 text-[11px] ${item.passed ? 'text-green-400' : item.points < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                                          {item.passed ? '✓' : item.points < 0 ? '✗' : '—'}
+                                        </span>
+                                        <span className="text-gray-300 truncate">{item.label}</span>
+                                      </div>
+                                      <span className={`shrink-0 font-mono font-semibold ${item.points > 0 ? 'text-green-400' : item.points < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                                        {item.points > 0 ? `+${item.points}` : item.points === 0 ? '0' : item.points}
+                                        {item.max > 0 ? `/${item.max}` : ''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-gray-600 text-[11px]">No items recorded</div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                      <div className="flex justify-between border-b border-dark-600 pb-1">
-                        <span className="text-gray-400">Volume</span>
-                        <span className="text-white font-medium">{screener.taScoreBreakdown.volume}/30</span>
-                      </div>
-                      <div className="flex justify-between border-b border-dark-600 pb-1">
-                        <span className="text-gray-400">Momentum</span>
-                        <span className="text-white font-medium">{screener.taScoreBreakdown.momentum}/25</span>
-                      </div>
-                      <div className="flex justify-between border-b border-dark-600 pb-1">
-                        <span className="text-gray-400">Structure</span>
-                        <span className="text-white font-medium">{screener.taScoreBreakdown.structure}/15</span>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="mt-6 flex flex-wrap gap-2 justify-center">
                     {screener.signals.length === 0 ? (
