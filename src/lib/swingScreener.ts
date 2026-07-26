@@ -604,22 +604,25 @@ async function runScreenerForSymbolRaw(
       }
     }
     else if (preset === 'BULL_DIV') {
-      // RSI Bullish Divergence — price makes lower lows but RSI makes higher lows.
-      // This is a classic hidden-strength reversal signal that fires BEFORE the trend reverses.
-      // The stock must be in a pullback or downtrend phase (RSI not already high).
+      // RSI Bullish Divergence + Lower Bollinger Band — classic mean reversion setup.
+      // The stock must be statistically "too cheap" (near lower BB) while momentum
+      // is diverging bullishly — sellers are exhausted and price should revert to mean.
       //
       // Requirements:
-      //   1. RSI divergence detected (lower price low + higher RSI low)
-      //   2. RSI in the sweet spot: not crashed (≥30), not already recovered (≤60)
-      //   3. Some smart money absorption (acc score ≥40 — 2/5 signals)
+      //   1. Price near lower Bollinger Band (%B ≤ 0.25, i.e. below or near lower band)
+      //   2. RSI divergence detected (lower price low + higher RSI low)
+      //   3. RSI in the sweet spot: not crashed (≥30), not already recovered (≤62)
       //   4. Stochastic recovering OR MACD histogram increasing (momentum starting to turn)
+      //   5. Some smart money absorption (acc score ≥40 — 2/5 signals)
 
+      const lowerBBReq = ta.bollingerB != null ? ta.bollingerB <= 0.25 : false;
       const divDetected = ta.rsiDivergence;
       const rsiInRange = ta.rsi != null ? ta.rsi >= 30 && ta.rsi <= 62 : false;
       const momentumTurning = ta.stochRecovery || ta.macdIncreasing;
 
-      taPass = divDetected && rsiInRange && momentumTurning;
+      taPass = lowerBBReq && divDetected && rsiInRange && momentumTurning;
       criteria.push(
+        { label: 'Near Lower Bollinger Band', value: ta.bollingerB != null ? `%B ${ta.bollingerB.toFixed(2)}` : '—', threshold: '≤ 0.25 (near lower band)', passed: lowerBBReq },
         { label: 'RSI Divergence', value: divDetected ? 'Detected' : 'None', threshold: 'Price LL + RSI HL', passed: divDetected },
         { label: 'RSI (Sweet Spot)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '30–62', passed: rsiInRange },
         { label: 'Momentum Turning', value: ta.stochRecovery ? 'Stoch Recovery' : ta.macdIncreasing ? 'MACD Rising' : 'No', threshold: 'Stoch or MACD', passed: momentumTurning },
@@ -627,7 +630,7 @@ async function runScreenerForSymbolRaw(
         { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 40', passed: accumulation.accumulationScore >= 40 },
       );
       if (taPass) {
-        signals.push('RSI Bullish Divergence — Price Lower Low, RSI Higher Low');
+        signals.push('Mean Reversion: Lower BB + RSI Divergence');
         if (ta.stochRecovery) signals.push('Stochastic Oversold Recovery');
         if (ta.macdIncreasing) signals.push('MACD Histogram Rising');
         if (accumulation.obvDivergence) signals.push('OBV Divergence Confirms');

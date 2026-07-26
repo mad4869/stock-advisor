@@ -254,10 +254,10 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                     const breakdown = screener.taScoreBreakdown;
                     const items = screener.taScoreItems ?? [];
                     const categories = [
-                      { key: 'trend' as const, label: 'Trend', max: 30, color: 'blue' },
-                      { key: 'volume' as const, label: 'Volume', max: 30, color: 'purple' },
-                      { key: 'momentum' as const, label: 'Momentum', max: 25, color: 'orange' },
-                      { key: 'structure' as const, label: 'Structure', max: 15, color: 'teal' },
+                      { key: 'trend' as const, label: 'Trend', max: 48, note: 'base 30 + bonuses', color: 'blue' },
+                      { key: 'volume' as const, label: 'Volume', max: 30, note: null, color: 'purple' },
+                      { key: 'momentum' as const, label: 'Momentum', max: 25, note: null, color: 'orange' },
+                      { key: 'structure' as const, label: 'Structure', max: 15, note: null, color: 'teal' },
                     ];
                     const colorMap: Record<string, { bar: string; badge: string; text: string }> = {
                       blue:   { bar: 'bg-blue-500',   badge: 'bg-blue-500/20 text-blue-400',   text: 'text-blue-400' },
@@ -267,7 +267,7 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                     };
                     return (
                       <div className="mt-5 w-full px-4 space-y-4 text-xs">
-                        {categories.map(({ key, label, max, color }) => {
+                        {categories.map(({ key, label, max, note, color }) => {
                           const score = breakdown ? (breakdown as any)[key] : null;
                           const catItems = items.filter(i => i.category === key);
                           const clr = colorMap[color];
@@ -275,8 +275,11 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                           return (
                             <div key={key} className="bg-dark-800 rounded-xl border border-dark-600 p-3">
                               {/* Category header with mini bar */}
-                              <div className="flex items-center justify-between mb-2">
-                                <span className={`font-bold uppercase tracking-wider text-[10px] ${clr.text}`}>{label}</span>
+                              <div className="flex items-center justify-between mb-1">
+                                <div>
+                                  <span className={`font-bold uppercase tracking-wider text-[10px] ${clr.text}`}>{label}</span>
+                                  {note && <span className="ml-1.5 text-[9px] text-gray-600 normal-case tracking-normal">{note}</span>}
+                                </div>
                                 {score != null && (
                                   <span className={`px-2 py-0.5 rounded-full font-semibold text-[11px] ${clr.badge}`}>
                                     {score}/{max}
