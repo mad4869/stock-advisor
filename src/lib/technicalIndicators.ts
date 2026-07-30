@@ -30,6 +30,8 @@ export interface TAData {
   sma200: number | null;
   macdHistogram: number | null;
   macdIncreasing: boolean;
+  macdGoldenCross: boolean;
+  macdCrossFromBelowZero: boolean;
   adx: number | null;
   plusDi: number | null;
   minusDi: number | null;
@@ -140,12 +142,23 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
   
   let macdHistogram = null;
   let macdIncreasing = false;
+  let macdGoldenCross = false;
+  let macdCrossFromBelowZero = false;
+
   if (macdData.length >= 2) {
-    const last1 = macdData[macdData.length - 1].histogram;
-    const last2 = macdData[macdData.length - 2].histogram;
-    macdHistogram = last1 !== undefined ? last1 : null;
-    if (last1 != null && last2 != null) {
-      macdIncreasing = last1 > last2;
+    const last = macdData[macdData.length - 1];
+    const prev = macdData[macdData.length - 2];
+    
+    macdHistogram = last.histogram !== undefined ? last.histogram : null;
+    if (last.histogram != null && prev.histogram != null) {
+      macdIncreasing = last.histogram > prev.histogram;
+    }
+
+    if (last.MACD != null && last.signal != null && prev.MACD != null && prev.signal != null) {
+      const freshCross = last.MACD > last.signal && prev.MACD <= prev.signal;
+      const belowZero = prev.MACD < 0; // Cross happened while MACD was below 0
+      macdGoldenCross = freshCross;
+      macdCrossFromBelowZero = freshCross && belowZero;
     }
   }
 
@@ -466,6 +479,8 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     sma200,
     macdHistogram,
     macdIncreasing,
+    macdGoldenCross,
+    macdCrossFromBelowZero,
     adx,
     plusDi,
     minusDi,

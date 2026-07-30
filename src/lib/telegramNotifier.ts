@@ -29,7 +29,7 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
 
   const presetTitleMap: Record<string, string> = {
     VOL_SPIKE: '🚀 VOLUME SPIKE DETECTED',
-    OVERSOLD: '📊 STOCH GC FROM OVERSOLD',
+    OVERSOLD: '📊 STOCH / MACD GC FROM OVERSOLD',
     BREAKOUT: '⚡ SWING BREAKOUT SETUP',
     EARLY_BREAKOUT: '🌱 EARLY BREAKOUT SETUP'
   };

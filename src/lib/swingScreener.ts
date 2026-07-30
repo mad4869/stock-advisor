@@ -472,29 +472,33 @@ async function runScreenerForSymbolRaw(
       if (taPass) signals.push('Early Breakout Setup');
     }
     else if (preset === 'OVERSOLD') {
-      // Stochastic Golden Cross from Oversold — the cleanest single-reason entry.
-      // K crosses above D while K was below 20 on the previous bar.
+      // Stochastic or MACD Golden Cross from Oversold — the cleanest single-reason entries.
+      // EITHER:
+      //   - Stoch: K crosses above D while K was below 20 on the previous bar.
+      //   - MACD: MACD crosses above Signal while MACD was below 0 on the previous bar.
       // No other reason needed — this is the signal as traders use it.
       //
       // Requirements:
-      //   1. Stoch GC from oversold zone (K crossed above D, prev K < 20) — primary gate
-      //   2. RSI not already overbought (≤ 70) — avoid buying into an extended move
+      //   1. Stoch GC from < 20 OR MACD GC from < 0
+      //   2. RSI not already overbought (≤ 70)
       //   3. Price not crashing (10d change > -5%)
 
       const stochGcReq = ta.stochRecovery;
+      const macdGcReq = ta.macdCrossFromBelowZero;
       const rsiNotOB = ta.rsi != null ? ta.rsi <= 70 : true;
       const notCrashing = priceChange10d != null ? priceChange10d > -0.05 : true;
 
-      taPass = stochGcReq && rsiNotOB && notCrashing;
+      taPass = (stochGcReq || macdGcReq) && rsiNotOB && notCrashing;
       criteria.push(
-        { label: 'Stoch GC from Oversold', value: ta.stochK != null && ta.stochD != null ? `K:${ta.stochK.toFixed(1)} D:${ta.stochD.toFixed(1)}` : '—', threshold: 'K crosses above D from < 20', passed: stochGcReq },
+        { label: 'Stoch GC (< 20) OR MACD GC (< 0)', value: stochGcReq ? 'Stoch GC' : (macdGcReq ? 'MACD GC' : 'None'), threshold: 'Fresh Cross', passed: stochGcReq || macdGcReq },
         { label: 'RSI (Not Overbought)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '≤ 70', passed: rsiNotOB },
         { label: 'Price Not Crashing', value: priceChange10d != null ? `${(priceChange10d * 100).toFixed(1)}%` : '—', threshold: '> -5% (10d)', passed: notCrashing },
         { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '— (bonus info)', passed: true },
       );
       if (taPass) {
-        signals.push('Stoch Golden Cross from Oversold Zone');
-        if (ta.macdIncreasing) signals.push('MACD Histogram Rising (Confirms)');
+        if (stochGcReq) signals.push('Stoch Golden Cross from Oversold Zone');
+        if (macdGcReq) signals.push('MACD Golden Cross from Below Zero');
+        if (ta.macdIncreasing && !macdGcReq) signals.push('MACD Histogram Rising (Confirms)');
         if (accumulation.obvDivergence) signals.push('OBV Divergence (Confirms)');
       }
     }
