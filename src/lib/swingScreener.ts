@@ -490,7 +490,7 @@ async function runScreenerForSymbolRaw(
 
       taPass = (stochGcReq || macdGcReq) && rsiNotOB && notCrashing;
       criteria.push(
-        { label: 'Stoch GC (< 20) OR MACD GC (< 0)', value: stochGcReq ? 'Stoch GC' : (macdGcReq ? 'MACD GC' : 'None'), threshold: 'Fresh Cross', passed: stochGcReq || macdGcReq },
+        { label: 'Stoch GC (< 20) OR MACD GC (< 0)', value: (stochGcReq && macdGcReq) ? 'Both (Stoch + MACD)' : (stochGcReq ? 'Stoch GC' : (macdGcReq ? 'MACD GC' : 'None')), threshold: 'Fresh Cross', passed: stochGcReq || macdGcReq },
         { label: 'RSI (Not Overbought)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '≤ 70', passed: rsiNotOB },
         { label: 'Price Not Crashing', value: priceChange10d != null ? `${(priceChange10d * 100).toFixed(1)}%` : '—', threshold: '> -5% (10d)', passed: notCrashing },
         { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '— (bonus info)', passed: true },
