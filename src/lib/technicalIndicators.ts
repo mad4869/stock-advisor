@@ -262,9 +262,13 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     const prevStoch = stochData[stochData.length - 2];
     stochK = lastStoch.k;
     stochD = lastStoch.d;
-    
-    // stochK > stochD and rising from below 30
-    stochRecovery = (stochK > stochD) && (stochK > prevStoch.k) && (prevStoch.k < 30);
+
+    // True "Stoch GC from oversold": K crosses above D on the current bar,
+    // having been below D (and below 20) on the previous bar.
+    // This is the exact setup traders call "Stoch golden cross from oversold zone".
+    const freshCross = stochK > stochD && prevStoch.k <= prevStoch.d;   // actual crossover bar
+    const crossFromOversold = prevStoch.k < 20;                          // was in oversold territory
+    stochRecovery = freshCross && crossFromOversold;
   }
 
   // CCI

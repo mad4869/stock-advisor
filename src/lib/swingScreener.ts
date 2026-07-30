@@ -7,7 +7,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND' | 'STOCH_GC';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -148,6 +148,7 @@ async function runScreenerForSymbolRaw(
       SHORT_SQUEEZE: 60,
       MA_TREND: 60,
       STEALTH_ACCUM: 40,
+      STOCH_GC: 0,      // stochRecovery is the primary gate; smart money not required
       BULL_DIV: 40,
       VOL_SPIKE: 20,     // very lenient — volume anomaly is the primary gate
       CONSISTENCY: 60,   // must accumulate in medium window at minimum
@@ -547,6 +548,33 @@ async function runScreenerForSymbolRaw(
       );
       if (taPass) signals.push('Above All MAs (EMA & SMA)');
       if (isOverextended) signals.push('Rejected: Price too extended from EMA20');
+    }
+    else if (preset === 'STOCH_GC') {
+      // Stochastic Golden Cross from Oversold — the cleanest single-reason entry.
+      // K crosses above D while K was below 20 on the previous bar.
+      // Very straightforward: no other reason needed.
+      //
+      // Requirements:
+      //   1. Stoch GC from oversold zone (K crossed above D, prev K < 20) — primary gate
+      //   2. RSI not already overbought (≤ 70) — don't buy into an already extended move
+      //   3. Price not crashing (10d change > -5%)
+
+      const stochGcReq = ta.stochRecovery;
+      const rsiNotOB = ta.rsi != null ? ta.rsi <= 70 : true;
+      const notCrashing = priceChange10d != null ? priceChange10d > -0.05 : true;
+
+      taPass = stochGcReq && rsiNotOB && notCrashing;
+      criteria.push(
+        { label: 'Stoch GC from Oversold', value: ta.stochK != null && ta.stochD != null ? `K:${ta.stochK.toFixed(1)} D:${ta.stochD.toFixed(1)}` : '—', threshold: 'K crosses above D from < 20', passed: stochGcReq },
+        { label: 'RSI (Not Overbought)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '≤ 70', passed: rsiNotOB },
+        { label: 'Price Not Crashing', value: priceChange10d != null ? `${(priceChange10d * 100).toFixed(1)}%` : '—', threshold: '> -5% (10d)', passed: notCrashing },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '— (bonus info)', passed: true },
+      );
+      if (taPass) {
+        signals.push('Stoch Golden Cross from Oversold Zone');
+        if (ta.macdIncreasing) signals.push('MACD Histogram Rising (Confirms)');
+        if (accumulation.obvDivergence) signals.push('OBV Divergence (Confirms)');
+      }
     }
     else if (preset === 'STEALTH_ACCUM') {
       // Stealth Accumulation — finds stocks where smart money is quietly
