@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
   const presetsParam = searchParams.get('preset');
   const targetPresets: Preset[] = presetsParam
     ? (presetsParam.split(',').filter(Boolean) as Preset[])
-    : ['VOL_SPIKE', 'STOCH_GC'];
+    : ['VOL_SPIKE', 'OVERSOLD'];
 
   const batchSize = 15; // Scan 15 symbols concurrently per batch
   const coolDownMs = 150; // 150ms rest between batches
