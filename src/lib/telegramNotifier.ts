@@ -35,12 +35,17 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
   };
 
   const title = presetTitleMap[preset] || `📈 ALERT: ${preset}`;
-  const volStr = volumeRatio != null ? `<b>Volume:</b> ${volumeRatio.toFixed(1)}x avg` : '<b>Volume:</b> Normal';
+  
+  // Hide volume for OVERSOLD since it's not a primary factor there
+  const volStr = preset === 'OVERSOLD' 
+    ? '' 
+    : (volumeRatio != null ? `<b>Volume:</b> ${volumeRatio.toFixed(1)}x avg\n` : '<b>Volume:</b> Normal\n');
+    
   const priceChangeStr = priceChange10d != null
-    ? `<b>10d Price Change:</b> ${(priceChange10d * 100 >= 0 ? '+' : '')}${(priceChange10d * 100).toFixed(1)}%`
+    ? `<b>10d Price Change:</b> ${(priceChange10d * 100 >= 0 ? '+' : '')}${(priceChange10d * 100).toFixed(1)}%\n`
     : '';
-  const priceStr = price != null ? `<b>Live Price:</b> ${market === 'ID' ? 'Rp ' : '$'}${price.toLocaleString()}` : '';
-  const smartScoreStr = smartMoneyScore != null ? `<b>Smart Money Score:</b> ${smartMoneyScore}/100` : '';
+  const priceStr = price != null ? `<b>Live Price:</b> ${market === 'ID' ? 'Rp ' : '$'}${price.toLocaleString()}\n` : '';
+  const smartScoreStr = smartMoneyScore != null ? `<b>Smart Money Score:</b> ${smartMoneyScore}/100\n` : '';
 
   const vUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL;
   const baseUrl = payload.appBaseUrl || process.env.NEXT_PUBLIC_APP_URL || (vUrl ? `https://${vUrl}` : 'https://stock-advisor-two.vercel.app');
@@ -50,12 +55,8 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
 ${title}
 
 <b>Symbol:</b> <code>${symbol}</code> (${market})
-${priceStr}
-${volStr}
-${priceChangeStr}
-<b>TA Score:</b> ${taScore}/100
+${priceStr}${volStr}${priceChangeStr}<b>TA Score:</b> ${taScore}/100
 ${smartScoreStr}
-
 👉 <a href="${detailUrl}">Open Detailed Analytics</a>
 `.trim();
 
