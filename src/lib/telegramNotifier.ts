@@ -10,6 +10,7 @@ export interface TelegramAlertPayload {
   priceChange10d?: number | null;
   taScore: number;
   smartMoneyScore?: number | null;
+  signals?: string[];
   appBaseUrl?: string;
 }
 
@@ -46,6 +47,10 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
     : '';
   const priceStr = price != null ? `<b>Live Price:</b> ${market === 'ID' ? 'Rp ' : '$'}${price.toLocaleString()}\n` : '';
   const smartScoreStr = smartMoneyScore != null ? `<b>Smart Money Score:</b> ${smartMoneyScore}/100\n` : '';
+  
+  const signalsStr = preset === 'OVERSOLD' && payload.signals && payload.signals.length > 0
+    ? `<b>Trigger:</b> ${payload.signals.join(' + ')}\n`
+    : '';
 
   const vUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL;
   const baseUrl = payload.appBaseUrl || process.env.NEXT_PUBLIC_APP_URL || (vUrl ? `https://${vUrl}` : 'https://stock-advisor-two.vercel.app');
@@ -56,7 +61,7 @@ ${title}
 
 <b>Symbol:</b> <code>${symbol}</code> (${market})
 ${priceStr}${volStr}${priceChangeStr}<b>TA Score:</b> ${taScore}/100
-${smartScoreStr}
+${smartScoreStr}${signalsStr}
 👉 <a href="${detailUrl}">Open Detailed Analytics</a>
 `.trim();
 
