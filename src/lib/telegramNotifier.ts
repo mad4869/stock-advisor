@@ -35,7 +35,7 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
   };
 
   const title = presetTitleMap[preset] || `📈 ALERT: ${preset}`;
-  const volStr = volumeRatio != null ? `<b>Volume Spike:</b> ${volumeRatio.toFixed(1)}x avg` : '<b>Volume:</b> Normal';
+  const volStr = volumeRatio != null ? `<b>Volume:</b> ${volumeRatio.toFixed(1)}x avg` : '<b>Volume:</b> Normal';
   const priceChangeStr = priceChange10d != null
     ? `<b>10d Price Change:</b> ${(priceChange10d * 100 >= 0 ? '+' : '')}${(priceChange10d * 100).toFixed(1)}%`
     : '';
