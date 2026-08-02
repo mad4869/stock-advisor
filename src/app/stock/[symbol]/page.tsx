@@ -9,6 +9,8 @@ import PriceRecommendationCard from '@/components/PriceRecommendationCard';
 
 // Fundamental Analysis Components
 import { computeFundamentalScore } from '@/lib/fundamentalScorer';
+import { calculateFairValue } from '@/lib/valuationCalculator';
+import FairValueCard from '@/components/analysis/FairValueCard';
 import CompanyOverview from '@/components/analysis/CompanyOverview';
 import ValuationMetrics from '@/components/analysis/ValuationMetrics';
 import ProfitabilityCharts from '@/components/analysis/ProfitabilityCharts';
@@ -93,6 +95,7 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
   // Build PeerData for comparison component
   const analysis = analysisData?.analysis;
   const fundamentalScore = analysis ? computeFundamentalScore(analysis, market as Market) : null;
+  const fairValueResult = analysis ? calculateFairValue(analysis, market as Market) : null;
   const currentPeerData = analysis
     ? {
         symbol: analysis.fundamentals.symbol,
@@ -584,6 +587,10 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
           )}
           <CompanyOverview analysis={analysisData.analysis} />
           
+          {fairValueResult && (
+            <FairValueCard fairValue={fairValueResult} market={market as Market} />
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <ValuationMetrics fundamentals={analysisData.analysis.fundamentals} analystRating={analysisData.analysis.analystRating} />
             <FinancialHealth analysis={analysisData.analysis} />
