@@ -231,13 +231,13 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     const rsiPad = new Array(closes.length - rsiSeries.length).fill(null).concat(rsiSeries);
     const rsiSlice = rsiPad.slice(-lookback);
 
-    // Collect swing lows: local minimum over a ±3 bar window
+    // Collect swing lows: local minimum over a ±2 bar window
     const swingLows: { idx: number; price: number; rsiVal: number }[] = [];
-    for (let i = 3; i < priceSlice.length - 3; i++) {
+    for (let i = 2; i < priceSlice.length - 2; i++) {
       const p = priceSlice[i];
       const isLow =
-        p <= priceSlice[i - 1] && p <= priceSlice[i - 2] && p <= priceSlice[i - 3] &&
-        p <= priceSlice[i + 1] && p <= priceSlice[i + 2] && p <= priceSlice[i + 3];
+        p <= priceSlice[i - 1] && p <= priceSlice[i - 2] &&
+        p <= priceSlice[i + 1] && p <= priceSlice[i + 2];
       const rsiVal = rsiSlice[i];
       if (isLow && rsiVal != null) {
         swingLows.push({ idx: i, price: p, rsiVal });
@@ -251,8 +251,8 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     const recent = swingLows[swingLows.length - 1];
     if (recent.idx - prev.idx < 5) return false;
 
-    // Bull divergence: price lower low AND RSI higher low (with ≥2pt buffer to filter noise)
-    return recent.price < prev.price && recent.rsiVal > prev.rsiVal + 2;
+    // Bull divergence: price lower low AND RSI higher low (with ≥1pt buffer to filter noise)
+    return recent.price < prev.price && recent.rsiVal > prev.rsiVal + 1;
   })();
 
   // Stochastic (14,3,3)

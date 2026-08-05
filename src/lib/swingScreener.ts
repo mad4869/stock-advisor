@@ -633,19 +633,19 @@ async function runScreenerForSymbolRaw(
       //   4. Stochastic recovering OR MACD histogram increasing (momentum starting to turn)
       //   5. Some smart money absorption (acc score ≥40 — 2/5 signals)
 
-      const lowerBBReq = ta.bollingerB != null ? ta.bollingerB <= 0.25 : false;
+      const lowerBBReq = ta.bollingerB != null ? ta.bollingerB <= 0.35 : false;
       const divDetected = ta.rsiDivergence;
-      const rsiInRange = ta.rsi != null ? ta.rsi >= 30 && ta.rsi <= 62 : false;
+      const rsiInRange = ta.rsi != null ? ta.rsi >= 25 && ta.rsi <= 65 : false;
       const momentumTurning = ta.stochRecovery || ta.macdIncreasing;
 
       taPass = lowerBBReq && divDetected && rsiInRange && momentumTurning;
       criteria.push(
-        { label: 'Near Lower Bollinger Band', value: ta.bollingerB != null ? `%B ${ta.bollingerB.toFixed(2)}` : '—', threshold: '≤ 0.25 (near lower band)', passed: lowerBBReq },
+        { label: 'Near Lower Bollinger Band', value: ta.bollingerB != null ? `%B ${ta.bollingerB.toFixed(2)}` : '—', threshold: '≤ 0.35', passed: lowerBBReq },
         { label: 'RSI Divergence', value: divDetected ? 'Detected' : 'None', threshold: 'Price LL + RSI HL', passed: divDetected },
-        { label: 'RSI (Sweet Spot)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '30–62', passed: rsiInRange },
+        { label: 'RSI (Sweet Spot)', value: ta.rsi?.toFixed(1) ?? '—', threshold: '25–65', passed: rsiInRange },
         { label: 'Momentum Turning', value: ta.stochRecovery ? 'Stoch Recovery' : ta.macdIncreasing ? 'MACD Rising' : 'No', threshold: 'Stoch or MACD', passed: momentumTurning },
         { label: 'OBV Divergence', value: accumulation.obvDivergence ? 'Confirmed' : 'Absent', threshold: 'Supporting signal', passed: accumulation.obvDivergence },
-        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 40', passed: accumulation.accumulationScore >= 40 },
+        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 30', passed: accumulation.accumulationScore >= 30 },
       );
       if (taPass) {
         signals.push('Mean Reversion: Lower BB + RSI Divergence');
