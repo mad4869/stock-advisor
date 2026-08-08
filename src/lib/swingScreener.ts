@@ -7,7 +7,7 @@ import { Market, SwingScreenerResult } from '@/types';
 import { detectRedFlags } from './redFlags';
 import { computeFundamentalScore } from './fundamentalScorer';
 
-export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND';
+export type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'DEFENSIVE' | 'DETAIL' | 'HIGH_YIELD_DIVIDEND';
 
 interface MarketConfig {
   minVolume20Avg: number; // absolute volume floor
@@ -150,7 +150,7 @@ async function runScreenerForSymbolRaw(
       STEALTH_ACCUM: 40,
       BULL_DIV: 40,
       VOL_SPIKE: 20,     // very lenient — volume anomaly is the primary gate
-      CONSISTENCY: 60,   // must accumulate in medium window at minimum
+      DEFENSIVE: 0,      // relies on fundamental data; skip smart money gate
       TA_ONLY: 0,
       DETAIL: 0,
       HIGH_YIELD_DIVIDEND: 0,
@@ -672,24 +672,27 @@ async function runScreenerForSymbolRaw(
       );
       if (taPass) signals.push(`Volume Spike (${ta.volumeRatio?.toFixed(1)}x avg)`);
     }
-    else if (preset === 'CONSISTENCY') {
-      // Multi-timeframe accumulation consistency.
-      // Passes only if accumulation signals are confirmed across ALL 3 timeframes:
-      // short (~2 weeks), medium (~1 month), long (~2 months).
-      const mtf = computeAccumulationMultiTimeframe(history);
-      result.consistencyScore = mtf;
-      const shortOk = mtf.s >= 40;
-      const mediumOk = mtf.m >= 40;
-      const longOk   = mtf.l >= 40;
-      taPass = shortOk && mediumOk && longOk;
+    else if (preset === 'DEFENSIVE') {
+      // Crash-Resistant / Defensive Screener.
+      // Finds fundamentally stable, low-volatility stocks that tend to hold up
+      // during market corrections because of:
+      //   1. Low beta (< 0.8)  — moves less than the market
+      //   2. Low daily volatility (ATR% < 3.0%)  — stable price action
+      //   3. Healthy balance sheet (D/E ≤ 1.5)  — not fragile in a credit crunch
+      //   4. Liquid (current ratio ≥ 1.2)  — can survive without external financing
+      //   5. Profitable (ROE ≥ 8%)  — not a cash-burning story stock
+      //   6. Above EMA200  — still in a long-term uptrend (not already in freefall)
+      // Fundamentals are loaded in the post-TA phase below.
+      taPass = true; // defer final pass/fail until fundamentals are loaded
       criteria.push(
-        { label: 'Short-Term (2w)', value: `${mtf.s}/100`, threshold: '≥ 40', passed: shortOk },
-        { label: 'Medium-Term (1m)', value: `${mtf.m}/100`, threshold: '≥ 40', passed: mediumOk },
-        { label: 'Long-Term (2m)', value: `${mtf.l}/100`, threshold: '≥ 40', passed: longOk },
-        { label: 'Consistency Label', value: mtf.label, threshold: '3/3 required', passed: taPass },
-        { label: 'Smart Money Score', value: `${accumulation.accumulationScore}`, threshold: '≥ 60', passed: accumulation.accumulationScore >= 60 },
+        { label: 'Beta (Low Volatility)', value: '—', threshold: '< 0.8', passed: false },
+        { label: 'ATR% (Daily Swing)', value: ta.atrPercent != null ? `${ta.atrPercent.toFixed(1)}%` : '—', threshold: '< 3.0%', passed: (ta.atrPercent ?? 99) < 3.0 },
+        { label: 'Above EMA200 (Trend)', value: ta.ema200 != null ? (ta.close > ta.ema200 ? 'Yes' : 'No') : '—', threshold: 'Price > EMA200', passed: ta.ema200 != null && ta.close > ta.ema200 },
+        { label: 'D/E Ratio', value: '—', threshold: '≤ 1.5', passed: false },
+        { label: 'Current Ratio', value: '—', threshold: '≥ 1.2', passed: false },
+        { label: 'ROE', value: '—', threshold: '≥ 8%', passed: false },
       );
-      if (taPass) signals.push(`Consistent Accumulation (${mtf.label})`);
+      if (taPass) signals.push('Screening for Crash-Resistant / Defensive Stock...');
     }
     else if (preset === 'TA_ONLY') {
       taPass = totalTaScore >= 90;
@@ -777,6 +780,44 @@ async function runScreenerForSymbolRaw(
               signals.push('High Yield Screen Passed');
             } else {
               signals.push(`Failed High Yield Requirement (${yieldPct.toFixed(2)}% < 5.0%)`);
+            }
+          }
+
+          if (preset === 'DEFENSIVE') {
+            const f = analysis.fundamentals;
+            const beta = f.beta;
+            const de = f.debtToEquity;
+            const cr = f.currentRatio;
+            const roe = f.roe;
+
+            const betaOk = beta != null ? beta < 0.8 : false;
+            const atrOk = (ta.atrPercent ?? 99) < 3.0;
+            const ema200Ok = ta.ema200 != null && ta.close > ta.ema200;
+            const deOk = de != null ? de <= 1.5 : false;
+            const crOk = cr != null ? cr >= 1.2 : false;
+            const roeOk = roe != null ? roe >= 8 : false;
+
+            // Must pass beta + at least 4 of the remaining 5
+            const fundamentalGates = [atrOk, ema200Ok, deOk, crOk, roeOk];
+            const fundamentalPassed = fundamentalGates.filter(Boolean).length;
+            taPass = betaOk && fundamentalPassed >= 3;
+
+            // Update placeholders created in the TA phase
+            const betaItem = criteria.find(c => c.label === 'Beta (Low Volatility)');
+            if (betaItem) { betaItem.passed = betaOk; betaItem.value = beta != null ? beta.toFixed(2) : '—'; }
+            const deItem = criteria.find(c => c.label === 'D/E Ratio');
+            if (deItem) { deItem.passed = deOk; deItem.value = de != null ? `${de.toFixed(2)}x` : '—'; }
+            const crItem = criteria.find(c => c.label === 'Current Ratio');
+            if (crItem) { crItem.passed = crOk; crItem.value = cr != null ? `${cr.toFixed(2)}x` : '—'; }
+            const roeItem = criteria.find(c => c.label === 'ROE');
+            if (roeItem) { roeItem.passed = roeOk; roeItem.value = roe != null ? `${roe.toFixed(1)}%` : '—'; }
+
+            if (taPass) {
+              signals.length = 0; // clear the placeholder signal
+              signals.push('Defensive: Low Beta (<0.8), Strong Balance Sheet');
+              if (ema200Ok) signals.push('Trading Above EMA200 (Long-Term Uptrend)');
+              if (betaOk && beta != null) signals.push(`Low Market Sensitivity (Beta ${beta.toFixed(2)})`);
+              if (roeOk && roe != null) signals.push(`Profitable Business (ROE ${roe.toFixed(1)}%)`);
             }
           }
 

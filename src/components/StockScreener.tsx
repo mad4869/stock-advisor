@@ -5,7 +5,7 @@ import { Search, ChevronRight, Loader2, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Market, SwingScreenerResult } from '@/types';
 
-type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'CONSISTENCY' | 'HIGH_YIELD_DIVIDEND' | 'MULTI_BAGGER';
+type Preset = 'DEFAULT' | 'BREAKOUT' | 'EARLY_BREAKOUT' | 'OVERSOLD' | 'SMART_MONEY' | 'VOLUME_CLIMAX' | 'SHORT_SQUEEZE' | 'MA_TREND' | 'TA_ONLY' | 'STEALTH_ACCUM' | 'BULL_DIV' | 'VOL_SPIKE' | 'DEFENSIVE' | 'HIGH_YIELD_DIVIDEND' | 'MULTI_BAGGER';
 
 export default function StockScreener() {
   const router = useRouter();
@@ -206,7 +206,7 @@ export default function StockScreener() {
             <option value="EARLY_BREAKOUT">🚀 Early Breakout (Emerging Trend Above EMA20)</option>
             <option value="BREAKOUT">Breakout (Accumulation + Breakout TA)</option>
             <option value="VOL_SPIKE">📊 Vol Spike (3x+ Volume Anomaly)</option>
-            <option value="CONSISTENCY">🔁 Consistency (Accumulation Across 3 Timeframes)</option>
+            <option value="DEFENSIVE">🛡️ Defensive (Crash-Resistant Stocks)</option>
             <option value="OVERSOLD">Oversold Recovery (Accumulation + Bounce)</option>
             <option value="SMART_MONEY">Strong Smart Money (3+ Signals)</option>
             <option value="VOLUME_CLIMAX">Volume Climax (Accumulation + Surge)</option>
