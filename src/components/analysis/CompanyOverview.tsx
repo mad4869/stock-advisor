@@ -97,30 +97,6 @@ export default function CompanyOverview({ analysis }: Props) {
         </div>
       </div>
 
-      {/* 52-Week Range */}
-      {range52pct !== null && (
-        <div>
-          <p className="text-xs text-gray-500 mb-2">52-Week Range</p>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400 w-20 text-right">{fmtPrice(low52)}</span>
-            <div className="flex-1 relative h-2 bg-dark-600 rounded-full overflow-hidden">
-              <div
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-full"
-                style={{ width: '100%', opacity: 0.3 }}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-blue-500 shadow-lg shadow-blue-500/30 transition-all"
-                style={{ left: `calc(${Math.min(Math.max(range52pct, 2), 98)}% - 6px)` }}
-              />
-            </div>
-            <span className="text-xs text-gray-400 w-20">{fmtPrice(high52)}</span>
-          </div>
-          <p className="text-[10px] text-gray-600 text-center mt-1">
-            Current price is {range52pct.toFixed(0)}% from 52-week low
-          </p>
-        </div>
-      )}
-
       {/* Description */}
       {profile.description && (
         <div>

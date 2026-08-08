@@ -548,15 +548,6 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                         </div>
                       </div>
                     )}
-
-                    {/* Volatility Profile */}
-                    <div className="mt-6">
-                      <VolatilityProfile
-                        fundamentalsBeta={analysisData?.analysis?.fundamentals?.beta ?? data?.profile?.beta ?? null}
-                        taData={screener.taData}
-                        market={market as Market}
-                      />
-                    </div>
                   </div>
                 );
               })()}
@@ -597,6 +588,14 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
           )}
           <CompanyOverview analysis={analysisData.analysis} />
           
+          {data?.screener?.taData && (
+            <VolatilityProfile
+              fundamentalsBeta={analysisData.analysis.fundamentals.beta}
+              taData={data.screener.taData}
+              market={market as Market}
+            />
+          )}
+
           {fairValueResult && (
             <FairValueCard fairValue={fairValueResult} market={market as Market} />
           )}
