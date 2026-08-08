@@ -150,7 +150,7 @@ async function runScreenerForSymbolRaw(
       STEALTH_ACCUM: 40,
       BULL_DIV: 40,
       VOL_SPIKE: 20,     // very lenient — volume anomaly is the primary gate
-      DEFENSIVE: 0,      // relies on fundamental data; skip smart money gate
+      DEFENSIVE: 20,     // filter truly dead/broken stocks; fundamentals are the real gate
       TA_ONLY: 0,
       DETAIL: 0,
       HIGH_YIELD_DIVIDEND: 0,
@@ -163,7 +163,7 @@ async function runScreenerForSymbolRaw(
     // This is both architecturally correct (follow smart money first)
     // and a performance optimization for large universes.
     // Exception: TA_ONLY, DETAIL, and HIGH_YIELD_DIVIDEND presets ignore the smart money gate entirely.
-    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND') {
+    if (!accumulation.isAccumulating && preset !== 'TA_ONLY' && preset !== 'DETAIL' && preset !== 'HIGH_YIELD_DIVIDEND' && preset !== 'DEFENSIVE') {
       result.isPass = false;
       return result;
     }
@@ -790,33 +790,35 @@ async function runScreenerForSymbolRaw(
             const cr = f.currentRatio;
             const roe = f.roe;
 
-            // Positive beta required: negative beta is usually a data artifact for IDX micro-caps
-            // Range: 0.1–0.75 — genuinely low-volatility, but still a real market participant
-            const betaOk = beta != null ? beta >= 0.1 && beta < 0.75 : false;
-            const atrOk = (ta.atrPercent ?? 99) < 2.5;       // tighter: < 2.5% daily swing
+            // Positive beta in 0.1–0.8: negative beta = data artifact, >0.8 = not defensive
+            const betaOk = beta != null ? beta >= 0.1 && beta < 0.8 : false;
+            const atrOk = (ta.atrPercent ?? 99) < 2.5;       // low daily swing
             const ema200Ok = ta.ema200 != null && ta.close > ta.ema200;
-            const deOk = de != null ? de <= 1.0 : false;      // tighter: conservative leverage
-            const crOk = cr != null ? cr >= 1.5 : false;      // tighter: solid liquidity buffer
-            const roeOk = roe != null ? roe >= 10 : false;    // tighter: meaningfully profitable
+            const deOk = de != null ? de <= 1.2 : false;      // moderate: not over-leveraged
+            const crOk = cr != null ? cr >= 1.3 : false;      // moderate: decent liquidity
+            const roeOk = roe != null ? roe >= 8 : false;     // consistently profitable
 
-            // All 6 criteria must pass — no free passes
-            taPass = betaOk && atrOk && ema200Ok && deOk && crOk && roeOk;
+            // Beta is a hard gate. Plus at least 4 out of the remaining 5 must pass.
+            // This handles IDX stocks where some data fields may be missing.
+            const otherGates = [atrOk, ema200Ok, deOk, crOk, roeOk];
+            const otherPassed = otherGates.filter(Boolean).length;
+            taPass = betaOk && otherPassed >= 4;
 
             // Update placeholders created in the TA phase
             const betaItem = criteria.find(c => c.label === 'Beta (Low Volatility)');
-            if (betaItem) { betaItem.passed = betaOk; betaItem.value = beta != null ? beta.toFixed(2) : '—'; betaItem.threshold = '0.1–0.75'; }
+            if (betaItem) { betaItem.passed = betaOk; betaItem.value = beta != null ? beta.toFixed(2) : '—'; betaItem.threshold = '0.1–0.8'; }
             const atrItem = criteria.find(c => c.label === 'ATR% (Daily Swing)');
-            if (atrItem) { atrItem.threshold = '< 2.5%'; }
+            if (atrItem) { atrItem.passed = atrOk; }
             const deItem = criteria.find(c => c.label === 'D/E Ratio');
-            if (deItem) { deItem.passed = deOk; deItem.value = de != null ? `${de.toFixed(2)}x` : '—'; deItem.threshold = '≤ 1.0'; }
+            if (deItem) { deItem.passed = deOk; deItem.value = de != null ? `${de.toFixed(2)}x` : '—'; deItem.threshold = '≤ 1.2'; }
             const crItem = criteria.find(c => c.label === 'Current Ratio');
-            if (crItem) { crItem.passed = crOk; crItem.value = cr != null ? `${cr.toFixed(2)}x` : '—'; crItem.threshold = '≥ 1.5'; }
+            if (crItem) { crItem.passed = crOk; crItem.value = cr != null ? `${cr.toFixed(2)}x` : '—'; crItem.threshold = '≥ 1.3'; }
             const roeItem = criteria.find(c => c.label === 'ROE');
-            if (roeItem) { roeItem.passed = roeOk; roeItem.value = roe != null ? `${roe.toFixed(1)}%` : '—'; roeItem.threshold = '≥ 10%'; }
+            if (roeItem) { roeItem.passed = roeOk; roeItem.value = roe != null ? `${roe.toFixed(1)}%` : '—'; roeItem.threshold = '≥ 8%'; }
 
             if (taPass) {
               signals.length = 0; // clear placeholder signal
-              signals.push('Defensive: All 6 Criteria Passed');
+              signals.push('Defensive: Beta < 0.8, Strong Fundamentals');
               if (beta != null) signals.push(`Low Market Sensitivity (Beta ${beta.toFixed(2)})`);
               if (ema200Ok) signals.push('Trading Above EMA200 (Long-Term Uptrend)');
               if (roeOk && roe != null) signals.push(`Profitable Business (ROE ${roe.toFixed(1)}%)`);
@@ -926,8 +928,8 @@ async function runScreenerForSymbolRaw(
         }
       } catch (err: any) {
         console.warn(`[Screener] Failed to fetch fundamentals/red flags for ${cleanSymbol}: ${err.message}`);
-        if (preset === 'HIGH_YIELD_DIVIDEND') {
-          taPass = false; // Fail the screen if fundamentals fail to load
+        if (preset === 'HIGH_YIELD_DIVIDEND' || preset === 'DEFENSIVE') {
+          taPass = false; // Fail if fundamentals can't load — these presets rely on fundamental data
         }
       }
     }
