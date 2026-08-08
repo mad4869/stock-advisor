@@ -789,36 +789,43 @@ async function runScreenerForSymbolRaw(
             const de = f.debtToEquity;
             const cr = f.currentRatio;
             const roe = f.roe;
+            const divYield = analysis.dividend.dividendYield ?? f.dividendYield ?? 0;
 
-            // Positive beta in 0.1–0.8: negative beta = data artifact, >0.8 = not defensive
+            // Hard gates: both must pass — these define a defensive stock
+            // Positive beta 0.1–0.8: negative = data artifact, >0.8 = too volatile
             const betaOk = beta != null ? beta >= 0.1 && beta < 0.8 : false;
-            const atrOk = (ta.atrPercent ?? 99) < 2.5;       // low daily swing
-            const ema200Ok = ta.ema200 != null && ta.close > ta.ema200;
-            const deOk = de != null ? de <= 1.2 : false;      // moderate: not over-leveraged
-            const crOk = cr != null ? cr >= 1.3 : false;      // moderate: decent liquidity
-            const roeOk = roe != null ? roe >= 8 : false;     // consistently profitable
+            // Dividend yield: must reward holders for staying through market downturns
+            const minDivYield = market === 'ID' ? 2.5 : 1.5; // IDX tends to pay higher yields
+            const divOk = divYield >= minDivYield;
 
-            // Beta is a hard gate. Plus at least 4 out of the remaining 5 must pass.
-            // This handles IDX stocks where some data fields may be missing.
+            // Supporting criteria: 3 out of 5 must pass
+            const atrOk = (ta.atrPercent ?? 99) < 2.5;
+            const ema200Ok = ta.ema200 != null && ta.close > ta.ema200;
+            const deOk = de != null ? de <= 1.2 : false;
+            const crOk = cr != null ? cr >= 1.3 : false;
+            const roeOk = roe != null ? roe >= 8 : false;
+
             const otherGates = [atrOk, ema200Ok, deOk, crOk, roeOk];
             const otherPassed = otherGates.filter(Boolean).length;
-            taPass = betaOk && otherPassed >= 4;
+            taPass = betaOk && divOk && otherPassed >= 3;
 
-            // Update placeholders created in the TA phase
+            // Update placeholders
             const betaItem = criteria.find(c => c.label === 'Beta (Low Volatility)');
             if (betaItem) { betaItem.passed = betaOk; betaItem.value = beta != null ? beta.toFixed(2) : '—'; betaItem.threshold = '0.1–0.8'; }
+            const divItem = criteria.find(c => c.label === 'Dividend Yield');
+            if (divItem) { divItem.passed = divOk; divItem.value = `${divYield.toFixed(2)}%`; divItem.threshold = `≥ ${minDivYield}%`; }
             const atrItem = criteria.find(c => c.label === 'ATR% (Daily Swing)');
             if (atrItem) { atrItem.passed = atrOk; }
             const deItem = criteria.find(c => c.label === 'D/E Ratio');
-            if (deItem) { deItem.passed = deOk; deItem.value = de != null ? `${de.toFixed(2)}x` : '—'; deItem.threshold = '≤ 1.2'; }
+            if (deItem) { deItem.passed = deOk; deItem.value = de != null ? `${de.toFixed(2)}x` : '—'; }
             const crItem = criteria.find(c => c.label === 'Current Ratio');
-            if (crItem) { crItem.passed = crOk; crItem.value = cr != null ? `${cr.toFixed(2)}x` : '—'; crItem.threshold = '≥ 1.3'; }
+            if (crItem) { crItem.passed = crOk; crItem.value = cr != null ? `${cr.toFixed(2)}x` : '—'; }
             const roeItem = criteria.find(c => c.label === 'ROE');
-            if (roeItem) { roeItem.passed = roeOk; roeItem.value = roe != null ? `${roe.toFixed(1)}%` : '—'; roeItem.threshold = '≥ 8%'; }
+            if (roeItem) { roeItem.passed = roeOk; roeItem.value = roe != null ? `${roe.toFixed(1)}%` : '—'; }
 
             if (taPass) {
-              signals.length = 0; // clear placeholder signal
-              signals.push('Defensive: Beta < 0.8, Strong Fundamentals');
+              signals.length = 0;
+              signals.push(`Defensive: Low Beta + Dividend ${divYield.toFixed(2)}%`);
               if (beta != null) signals.push(`Low Market Sensitivity (Beta ${beta.toFixed(2)})`);
               if (ema200Ok) signals.push('Trading Above EMA200 (Long-Term Uptrend)');
               if (roeOk && roe != null) signals.push(`Profitable Business (ROE ${roe.toFixed(1)}%)`);
