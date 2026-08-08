@@ -20,6 +20,7 @@ import CashFlowAnalysis from '@/components/analysis/CashFlowAnalysis';
 import DividendAnalysis from '@/components/analysis/DividendAnalysis';
 import RedFlagsPanel from '@/components/analysis/RedFlagsPanel';
 import PeerComparison from '@/components/analysis/PeerComparison';
+import VolatilityProfile from '@/components/analysis/VolatilityProfile';
 
 interface DetailData {
   screener: SwingScreenerResult | null;
@@ -547,6 +548,15 @@ export default function StockDetailPage({ params }: { params: { symbol: string }
                         </div>
                       </div>
                     )}
+
+                    {/* Volatility Profile */}
+                    <div className="mt-6">
+                      <VolatilityProfile
+                        fundamentalsBeta={analysisData?.analysis?.fundamentals?.beta ?? data?.profile?.beta ?? null}
+                        taData={screener.taData}
+                        market={market as Market}
+                      />
+                    </div>
                   </div>
                 );
               })()}
