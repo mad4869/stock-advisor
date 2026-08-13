@@ -10,7 +10,7 @@ export default function ScorePage() {
         <Target className="w-16 h-16 text-blue-500 mx-auto mb-6" />
         <h1 className="text-3xl font-bold text-white mb-4">Swing Trading Score</h1>
         <p className="text-gray-400 max-w-lg mx-auto">
-          This module is currently being redesigned for the new swing trading and bandarmology approach.
+          This module is currently being redesigned for the new swing trading and technical analysis approach.
         </p>
       </div>
     </div>

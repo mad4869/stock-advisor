@@ -97,14 +97,7 @@ export default function StockScreener() {
         }
 
         accumulatedResults = [...accumulatedResults, ...(data.results || [])];
-        setResults(accumulatedResults.sort((a, b) => {
-          // Primary sort: accumulation score (smart money first)
-          const aAcc = a.smartMoney?.accumulationScore ?? 0;
-          const bAcc = b.smartMoney?.accumulationScore ?? 0;
-          if (bAcc !== aAcc) return bAcc - aAcc;
-          // Secondary sort: TA score
-          return b.taScore - a.taScore;
-        }));
+        setResults(accumulatedResults.sort((a, b) => b.taScore - a.taScore));
         
         totalPages = data.pagination.totalPages;
         setProgress(Math.round((currentPage / totalPages) * 100));
@@ -200,18 +193,16 @@ export default function StockScreener() {
             onChange={(e) => setPreset(e.target.value as Preset)}
             className="input-field py-2"
           >
-            <option value="DEFAULT">Default (Smart Money → TA)</option>
-            <option value="STEALTH_ACCUM">🔍 Stealth Accumulation (Volume Up, Price Not Yet)</option>
+            <option value="DEFAULT">Default (TA Focus)</option>
             <option value="BULL_DIV">📈 Bull Divergence (RSI Hidden Strength)</option>
             <option value="EARLY_BREAKOUT">🚀 Early Breakout (Emerging Trend Above EMA20)</option>
             <option value="BREAKOUT">Breakout (Accumulation + Breakout TA)</option>
             <option value="VOL_SPIKE">📊 Vol Spike (3x+ Volume Anomaly)</option>
             <option value="DEFENSIVE">🛡️ Defensive (Crash-Resistant Stocks)</option>
             <option value="OVERSOLD">Oversold Recovery (Accumulation + Bounce)</option>
-            <option value="SMART_MONEY">Strong Smart Money (3+ Signals)</option>
             <option value="VOLUME_CLIMAX">Volume Climax (Accumulation + Surge)</option>
             <option value="MA_TREND">MA Trend (Above All EMA &amp; SMA)</option>
-            <option value="TA_ONLY">Elite TA Only (Score 90+, No Smart Money)</option>
+            <option value="TA_ONLY">Elite TA Only (Score 90+)</option>
             <option value="HIGH_YIELD_DIVIDEND">💰 High Yield Dividend (&ge;5% Yield)</option>
             {marketTab === 'US' && <option value="SHORT_SQUEEZE">Short Squeeze (US Only)</option>}
           </select>
@@ -276,7 +267,6 @@ export default function StockScreener() {
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b border-dark-600">
                 <th className="py-3 px-4 font-semibold">Symbol</th>
-                <th className="py-3 px-4 font-semibold">Smart Money</th>
                 <th className="py-3 px-4 font-semibold">TA Score</th>
                 <th className="py-3 px-4 font-semibold">Quality</th>
                 <th className="py-3 px-4 font-semibold">Why Passed</th>
@@ -315,23 +305,7 @@ export default function StockScreener() {
                         <div className="font-bold text-white">{result.symbol.replace('.JK', '')}</div>
                         <div className="text-xs text-gray-500">{marketTab === 'US' ? '🇺🇸 US' : '🇮🇩 IDX'}</div>
                       </td>
-                      <td className="py-3 px-4">
-                        {result.smartMoney ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full ${result.smartMoney.accumulationScore >= 60 ? 'bg-green-500' : result.smartMoney.accumulationScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                style={{ width: `${Math.min(100, result.smartMoney.accumulationScore)}%` }}
-                              />
-                            </div>
-                            <span className={`text-xs font-medium ${result.smartMoney.accumulationScore >= 60 ? 'text-green-400' : result.smartMoney.accumulationScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                              {result.smartMoney.signalCount}/{result.smartMoney.totalSignals}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-500">N/A</span>
-                        )}
-                      </td>
+
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           <div className="w-full max-w-[60px] bg-dark-600 h-2 rounded-full overflow-hidden">
@@ -526,42 +500,9 @@ export default function StockScreener() {
                               </div>
                             </div>
 
-                            {/* MIDDLE: Smart Money + TA Indicators */}
+                            {/* MIDDLE: TA Indicators */}
                             <div className="bg-dark-800 p-4 rounded-xl border border-dark-700 space-y-4">
-                              <div>
-                                <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Smart Money Breakdown</h4>
-                                {result.smartMoney ? (
-                                  <div className="space-y-1 text-xs text-gray-300">
-                                    <div>Accumulation Score: <span className="font-semibold text-white">{result.smartMoney.accumulationScore}</span></div>
-                                    <div>Signals Bullish: <span className="font-semibold text-white">{result.smartMoney.signalCount} of {result.smartMoney.totalSignals}</span></div>
-                                    <div className="mt-2 space-y-1">
-                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
-                                        <span>A/D Trend Bullish</span>
-                                        <span className={result.smartMoney.adTrendBullish ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.adTrendBullish ? 'YES' : 'NO'}</span>
-                                      </div>
-                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
-                                        <span>Chaikin Money Flow (CMF)</span>
-                                        <span className={result.smartMoney.cmfBullish ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.cmf.toFixed(2)} ({result.smartMoney.cmfBullish ? 'BULL' : 'BEAR'})</span>
-                                      </div>
-                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
-                                        <span>OBV Volume Divergence</span>
-                                        <span className={result.smartMoney.obvDivergence ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.obvDivergence ? 'YES' : 'NO'}</span>
-                                      </div>
-                                      <div className="flex justify-between border-b border-dark-700 py-0.5">
-                                        <span>Volume Profile Status</span>
-                                        <span className={result.smartMoney.volumeProfileBullish ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.volumeProfileBullish ? 'ACCUMULATING' : 'NEUTRAL'}</span>
-                                      </div>
-                                      <div className="flex justify-between py-0.5">
-                                        <span>Large Block Buying Activity</span>
-                                        <span className={result.smartMoney.largeBlockBuying ? 'text-green-400 font-medium' : 'text-gray-500'}>{result.smartMoney.largeBlockBuying ? 'YES' : 'NO'}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-gray-500">Smart money metrics not available.</p>
-                                )}
-                              </div>
-                              <div className="border-t border-dark-700 pt-4">
+                              <div className="pt-2">
                                 <h4 className="font-bold text-white mb-2 uppercase text-xs tracking-wider text-blue-400">Technical Indicators</h4>
                                 {result.taData ? (
                                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -608,30 +549,6 @@ export default function StockScreener() {
                                   <p className="text-xs text-gray-500">Criteria details not available for this preset.</p>
                                 )}
 
-                                {/* Consistency Score Breakdown */}
-                                {result.consistencyScore && (
-                                  <div className="mt-4 pt-3 border-t border-dark-700">
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Timeframe Breakdown</p>
-                                    {([
-                                      { label: 'Short (2w)', score: result.consistencyScore.s },
-                                      { label: 'Medium (1m)', score: result.consistencyScore.m },
-                                      { label: 'Long (2m)', score: result.consistencyScore.l },
-                                    ] as { label: string; score: number }[]).map(({ label, score }) => (
-                                      <div key={label} className="mb-1.5">
-                                        <div className="flex justify-between text-[11px] mb-0.5">
-                                          <span className="text-gray-400">{label}</span>
-                                          <span className={score >= 40 ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>{score}/100</span>
-                                        </div>
-                                        <div className="w-full bg-dark-600 h-1.5 rounded-full overflow-hidden">
-                                          <div className={`h-full rounded-full ${score >= 60 ? 'bg-green-500' : score >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${score}%` }} />
-                                        </div>
-                                      </div>
-                                    ))}
-                                    <div className="text-[11px] text-gray-400 mt-1">
-                                      Consistency: <span className="text-white font-semibold">{result.consistencyScore.label}</span>
-                                    </div>
-                                  </div>
-                                )}
 
                                 {/* Warning-level Red Flags */}
                                 {result.redFlags && result.redFlags.length > 0 && (

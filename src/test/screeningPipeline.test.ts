@@ -56,7 +56,7 @@ describe('screeningPipeline', () => {
     expect(result.isPass).toBe(true);
     expect(result.error).toBeUndefined();
     expect(result.taScore).toBeGreaterThanOrEqual(60);
-    expect(result.smartMoney?.isAccumulating).toBe(true);
+
   });
 
   it('should run full ID screening and fail stocks under the 1,000,000 ID volume floor', async () => {
@@ -99,7 +99,7 @@ describe('screeningPipeline', () => {
 
     const result = await runScreenerForSymbol('BBCA', 'ID', 'DEFAULT');
     expect(result.isPass).toBe(false);
-    expect(result.smartMoney?.isAccumulating).toBe(false);
+
     expect(result.taData).toBeNull(); // Gate 2 skipped
   });
 });

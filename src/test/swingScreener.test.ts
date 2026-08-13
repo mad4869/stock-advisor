@@ -88,7 +88,7 @@ describe('swingScreener', () => {
       vi.mocked(yf.chart).mockResolvedValue({ quotes: badHistory } as any);
 
       const result = await runScreenerForSymbol('BBCA', 'ID');
-      expect(result.smartMoney?.isAccumulating).toBe(false);
+
       expect(result.isPass).toBe(false);
       expect(result.taData).toBeNull();
     });
@@ -112,7 +112,7 @@ describe('swingScreener', () => {
       vi.mocked(yf.chart).mockResolvedValue({ quotes: goodHistory } as any);
 
       const result = await runScreenerForSymbol('AAPL', 'US', 'DEFAULT');
-      expect(result.smartMoney?.isAccumulating).toBe(true);
+
       expect(result.isPass).toBe(true);
       expect(result.taScore).toBeGreaterThanOrEqual(60);
     });
@@ -129,7 +129,7 @@ describe('swingScreener', () => {
       vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
 
       const result = await runScreenerForSymbol('AAPL', 'US', 'BREAKOUT');
-      expect(result.smartMoney).not.toBeNull();
+
     });
   });
 
@@ -139,19 +139,9 @@ describe('swingScreener', () => {
       vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
 
       const result = await runScreenerForSymbol('AAPL', 'US', 'OVERSOLD');
-      expect(result.smartMoney).toBeDefined();
     });
   });
 
-  describe('SMART_MONEY preset', () => {
-    it('should require strong accumulation for SMART_MONEY', async () => {
-      const history = generateMockHistory(100, 'up');
-      vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
-
-      const result = await runScreenerForSymbol('AAPL', 'US', 'SMART_MONEY');
-      expect(result.smartMoney).toBeDefined();
-    });
-  });
 
   describe('VOLUME_CLIMAX preset', () => {
     it('should handle VOLUME_CLIMAX preset', async () => {
@@ -162,7 +152,6 @@ describe('swingScreener', () => {
       vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
 
       const result = await runScreenerForSymbol('AAPL', 'US', 'VOLUME_CLIMAX');
-      expect(result.smartMoney).toBeDefined();
     });
   });
 
@@ -172,7 +161,6 @@ describe('swingScreener', () => {
       vi.mocked(yf.chart).mockResolvedValue({ quotes: history } as any);
 
       const result = await runScreenerForSymbol('AAPL', 'US', 'SHORT_SQUEEZE');
-      expect(result.smartMoney).toBeDefined();
     });
   });
 

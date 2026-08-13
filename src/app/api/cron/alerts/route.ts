@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
                   volumeRatio: result.taData?.volumeRatio,
                   priceChange10d: result.taData?.priceChange10d,
                   taScore: result.taScore,
-                  smartMoneyScore: result.smartMoney?.accumulationScore,
+
                   signals: result.signals
                 });
 

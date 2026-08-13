@@ -236,22 +236,9 @@ export interface SwingScreenerResult {
     passed: boolean;
   }[];
   taData: any;
-  smartMoney: {
-    accumulationScore: number;
-    isAccumulating: boolean;
-    signalCount: number;
-    totalSignals: number;
-    logs: string[];
-    adTrendBullish: boolean;
-    cmf: number;
-    cmfBullish: boolean;
-    volumeProfileBullish: boolean;
-    obvDivergence: boolean;
-    largeBlockBuying: boolean;
-  } | null;
   signals: string[];
   presetCriteria?: PresetCriterion[];  // structured pass/fail per criterion for the active preset
-  consistencyScore?: { s: number; m: number; l: number; label: string } | null;
+
   isPass: boolean;
   error?: string;
   redFlags?: any[];

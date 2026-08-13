@@ -30,7 +30,7 @@ export default function HomePage() {
         <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-6">
           <Zap className="w-4 h-4 text-blue-400" />
           <span className="text-sm text-blue-400 font-medium">
-            Swing Trading & Bandarmology Powered
+            Swing Trading & Technical Analysis Powered
           </span>
         </div>
         <h1 className="text-4xl sm:text-5xl font-bold mb-4">
