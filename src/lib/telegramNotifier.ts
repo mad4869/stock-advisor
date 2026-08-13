@@ -1,23 +1,28 @@
 import { Market } from '@/types';
-import { Preset } from '@/lib/swingScreener';
+import { BuySignalResult, PriceLevel, FundamentalSummary } from './buySignalDetector';
 
-export interface TelegramAlertPayload {
+export interface BuySignalPayload {
   symbol: string;
   market: Market;
-  preset: Preset;
-  price?: number;
-  volumeRatio?: number | null;
-  priceChange10d?: number | null;
-  taScore: number;
-  smartMoneyScore?: number | null;
-  signals?: string[];
+  price: number;
+  signal: BuySignalResult;
   appBaseUrl?: string;
 }
 
 /**
- * Sends a rich HTML push notification via the Telegram Bot API.
+ * Formats a price with the correct market currency prefix.
  */
-export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<boolean> {
+function fmtPrice(price: number, market: Market): string {
+  if (market === 'ID') {
+    return `Rp ${price.toLocaleString('id-ID')}`;
+  }
+  return `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Sends a rich BUY signal notification via the Telegram Bot API.
+ */
+export async function sendBuySignalAlert(payload: BuySignalPayload): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
@@ -26,44 +31,65 @@ export async function sendTelegramAlert(payload: TelegramAlertPayload): Promise<
     return false;
   }
 
-  const { symbol, market, preset, price, volumeRatio, priceChange10d, taScore, smartMoneyScore } = payload;
+  const { symbol, market, price, signal } = payload;
 
-  const presetTitleMap: Record<string, string> = {
-    VOL_SPIKE: '🚀 VOLUME SPIKE DETECTED',
-    OVERSOLD: '📊 STOCH / MACD GC FROM OVERSOLD',
-    BREAKOUT: '⚡ SWING BREAKOUT SETUP',
-    EARLY_BREAKOUT: '🌱 EARLY BREAKOUT SETUP'
-  };
+  // ── Build Reasons Block ──
+  const reasonLines = signal.reasons.map(r => `• ${r.label} (${r.detail})`).join('\n');
 
-  const title = presetTitleMap[preset] || `📈 ALERT: ${preset}`;
-  
-  // Hide volume for OVERSOLD since it's not a primary factor there
-  const volStr = preset === 'OVERSOLD' 
-    ? '' 
-    : (volumeRatio != null ? `<b>Volume:</b> ${volumeRatio.toFixed(1)}x avg\n` : '<b>Volume:</b> Normal\n');
-    
-  const priceChangeStr = priceChange10d != null
-    ? `<b>10d Price Change:</b> ${(priceChange10d * 100 >= 0 ? '+' : '')}${(priceChange10d * 100).toFixed(1)}%\n`
-    : '';
-  const priceStr = price != null ? `<b>Live Price:</b> ${market === 'ID' ? 'Rp ' : '$'}${price.toLocaleString()}\n` : '';
-  const smartScoreStr = smartMoneyScore != null ? `<b>Smart Money Score:</b> ${smartMoneyScore}/100\n` : '';
-  
-  const signalsStr = preset === 'OVERSOLD' && payload.signals && payload.signals.length > 0
-    ? `<b>Trigger:</b> ${payload.signals.join(' + ')}\n`
+  // ── Build Entry Block ──
+  const entryLines = signal.entries
+    .map(e => `  → ${e.label}: ${fmtPrice(e.price, market)}`)
+    .join('\n');
+
+  // ── Build Stop Loss ──
+  const slLine = signal.stopLoss
+    ? `🛑 <b>Stop Loss:</b> ${fmtPrice(signal.stopLoss.price, market)} (${signal.stopLoss.label})`
     : '';
 
+  // ── Build Targets Block ──
+  const targetLines = signal.targets
+    .map((t, i) => `  → T${i + 1}: ${fmtPrice(t.price, market)} (${t.label})`)
+    .join('\n');
+
+  // ── Build Fundamental Summary ──
+  let fundLine = '';
+  if (signal.fundamentalSummary) {
+    const f = signal.fundamentalSummary;
+    const parts: string[] = [];
+    if (f.roe) parts.push(`ROE ${f.roe}`);
+    if (f.debtToEquity) parts.push(`D/E ${f.debtToEquity}`);
+    if (f.dividendYield) parts.push(`Div ${f.dividendYield}`);
+    fundLine = `📈 <b>Fundamental Grade:</b> ${f.grade} (${f.total}/100)` +
+      (parts.length > 0 ? `\n  ${parts.join(' | ')}` : '');
+  }
+
+  // ── Build Detail URL ──
   const vUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL;
   const baseUrl = payload.appBaseUrl || process.env.NEXT_PUBLIC_APP_URL || (vUrl ? `https://${vUrl}` : 'https://stock-advisor-two.vercel.app');
-  const detailUrl = `${baseUrl.replace(/\/$/, '')}/stock/${symbol}?market=${market}&preset=${preset}`;
+  const detailUrl = `${baseUrl.replace(/\/$/, '')}/stock/${symbol}?market=${market}`;
 
-  const message = `
-${title}
-
-<b>Symbol:</b> <code>${symbol}</code> (${market})
-${priceStr}${volStr}${priceChangeStr}<b>TA Score:</b> ${taScore}/100
-${smartScoreStr}${signalsStr}
-👉 <a href="${detailUrl}">Open Detailed Analytics</a>
-`.trim();
+  // ── Assemble Message ──
+  const message = [
+    `🟢 <b>BUY SIGNAL: ${symbol.replace('.JK', '')}</b> (${market === 'ID' ? 'IDX' : 'US'})`,
+    '',
+    `📊 <b>Why Buy:</b>`,
+    reasonLines,
+    '',
+    `💰 <b>Entry:</b>`,
+    entryLines,
+    '',
+    slLine,
+    '',
+    targetLines ? `🎯 <b>Targets:</b>\n${targetLines}` : '',
+    '',
+    fundLine,
+    '',
+    `👉 <a href="${detailUrl}">Open Detailed Analytics</a>`,
+  ]
+    .filter(line => line !== '') // Remove empty sections
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n') // Collapse triple+ newlines
+    .trim();
 
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -73,7 +99,7 @@ ${smartScoreStr}${signalsStr}
         chat_id: chatId,
         text: message,
         parse_mode: 'HTML',
-        disable_web_page_preview: false
+        disable_web_page_preview: true
       })
     });
 

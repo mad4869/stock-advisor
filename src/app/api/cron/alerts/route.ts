@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runScreenerForSymbol, Preset } from '@/lib/swingScreener';
-import { ID_UNIVERSES, US_UNIVERSES } from '@/lib/universes';
+import { yf, getComprehensiveAnalysis2 } from '@/lib/yahooFinance2';
+import { calculateTA } from '@/lib/technicalIndicators';
+import { computeFundamentalScore } from '@/lib/fundamentalScorer';
+import { detectBuySignal, FundamentalInput } from '@/lib/buySignalDetector';
+import { sendBuySignalAlert } from '@/lib/telegramNotifier';
 import { isAlertedToday, markAlertedToday } from '@/lib/alertStorage';
-import { sendTelegramAlert } from '@/lib/telegramNotifier';
+import { ID_UNIVERSES, US_UNIVERSES } from '@/lib/universes';
+import { historyCache, CACHE_TTL } from '@/lib/cache';
 import { Market } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +22,7 @@ export async function GET(request: NextRequest) {
   const force = searchParams.get('force') === 'true';
 
   // ──────────────────────────────────────────────────────────────
-  // 1. JAKARTA MARKET HOURS GUARD (Monday–Friday, 09:00–16:00 WIB)
+  // 1. JAKARTA MARKET HOURS GUARD (Monday–Friday, 10:00–16:00 WIB)
   // ──────────────────────────────────────────────────────────────
   if (!force) {
     const now = new Date();
@@ -44,13 +48,12 @@ export async function GET(request: NextRequest) {
   const isValidCronSecret = process.env.CRON_SECRET && 
     (authHeader === `Bearer ${process.env.CRON_SECRET}` || querySecret === process.env.CRON_SECRET);
 
-  // Allow execution if triggered by Vercel Cron, valid Bearer secret, valid query secret, or force=true in development
   if (!isVercelCron && !isValidCronSecret && !force && process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Unauthorized cron execution' }, { status: 401 });
   }
 
   // ──────────────────────────────────────────────────────────────
-  // 3. UNIVERSE & PRESETS SETUP
+  // 3. UNIVERSE SETUP
   // ──────────────────────────────────────────────────────────────
   const marketRaw = searchParams.get('market') || 'ID';
   const market: Market = marketRaw === 'US' ? 'US' : 'ID';
@@ -63,21 +66,15 @@ export async function GET(request: NextRequest) {
     symbols = US_UNIVERSES[universeKey as keyof typeof US_UNIVERSES] || US_UNIVERSES.SP100;
   }
 
-  // Target presets for real-time alerts
-  const presetsParam = searchParams.get('preset');
-  const targetPresets: Preset[] = presetsParam
-    ? (presetsParam.split(',').filter(Boolean) as Preset[])
-    : ['VOL_SPIKE', 'OVERSOLD'];
-
-  const batchSize = 15; // Scan 15 symbols concurrently per batch
-  const coolDownMs = 150; // 150ms rest between batches
+  const batchSize = 10; // Slightly smaller batches since we're doing TA + fundamentals per symbol
+  const coolDownMs = 200;
 
   let totalScanned = 0;
   let alertsSent = 0;
-  const matches: Array<{ symbol: string; preset: Preset; alerted: boolean }> = [];
+  const matches: Array<{ symbol: string; reasons: string[]; alerted: boolean }> = [];
 
   // ──────────────────────────────────────────────────────────────
-  // 4. BATCHED CONCURRENCY SCANNING LOOP
+  // 4. BATCHED BUY SIGNAL SCANNING LOOP
   // ──────────────────────────────────────────────────────────────
   const startTime = Date.now();
   for (let i = 0; i < symbols.length; i += batchSize) {
@@ -90,48 +87,110 @@ export async function GET(request: NextRequest) {
 
     await Promise.allSettled(
       batchSymbols.map(async (symbol) => {
-        for (const preset of targetPresets) {
-          try {
-            const result = await runScreenerForSymbol(symbol, market, preset);
-            totalScanned++;
+        try {
+          totalScanned++;
 
-            if (result.isPass) {
-              const alreadyAlerted = await isAlertedToday(symbol, preset);
-              if (!alreadyAlerted) {
-                // Trigger Telegram Push Notification
-                const sent = await sendTelegramAlert({
-                  symbol: result.symbol,
-                  market: result.market,
-                  preset,
-                  price: result.taData?.price,
-                  volumeRatio: result.taData?.volumeRatio,
-                  priceChange10d: result.taData?.priceChange10d,
-                  taScore: result.taScore,
+          // Check deduplication first — skip if already alerted today
+          const alreadyAlerted = await isAlertedToday(symbol);
+          if (alreadyAlerted) return;
 
-                  signals: result.signals
-                });
+          // ── Fetch Price History ──
+          const cleanSymbol = market === 'ID' && !symbol.endsWith('.JK')
+            ? `${symbol}.JK`
+            : symbol;
 
-                if (sent) {
-                  alertsSent++;
-                }
-
-                // Mark as alerted in Vercel KV (even if sendTelegramAlert returned false due to missing bot token,
-                // so we don't spam errors every 15 mins)
-                await markAlertedToday(symbol, preset, {
-                  timestamp: Date.now(),
-                  price: result.taData?.price,
-                  volumeRatio: result.taData?.volumeRatio
-                });
-
-                matches.push({ symbol: result.symbol, preset, alerted: sent });
-              } else {
-                matches.push({ symbol: result.symbol, preset, alerted: false });
+          const cacheKey = `history:${cleanSymbol}:6mo`;
+          let history = historyCache.get<any[]>(cacheKey);
+          if (!history) {
+            try {
+              const chartResult = await yf.chart(cleanSymbol, {
+                period1: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                interval: '1d'
+              });
+              history = chartResult?.quotes ?? [];
+              if (history && history.length > 0) {
+                historyCache.set(cacheKey, history, CACHE_TTL.HISTORICAL);
               }
+            } catch {
+              return; // Skip symbol if we can't fetch history
             }
-          } catch (err) {
-            // Silently skip individual symbol fetch errors to keep the batch moving
-            console.error(`[cron/alerts] Error scanning ${symbol} (${preset}):`, err);
           }
+
+          if (!history || history.length < 20) return;
+
+          // ── Calculate TA ──
+          const ta = calculateTA(history, market);
+          if (!ta) return;
+
+          // ── Quick Pre-Filter: skip obviously healthy/overbought stocks ──
+          // Only scan stocks that have at least one potential buy signal indicator
+          const hasAnySupportHint = (ta.bollingerB != null && ta.bollingerB < 0.30) ||
+            (ta.distFromEMA50 != null && ta.distFromEMA50 >= -0.04 && ta.distFromEMA50 <= 0.02) ||
+            (ta.distFromEMA200 != null && ta.distFromEMA200 >= -0.04 && ta.distFromEMA200 <= 0.02) ||
+            (ta.distanceToS1 != null && ta.distanceToS1 <= 0.04);
+
+          const hasAnyOversoldHint = (ta.rsi != null && ta.rsi < 40) ||
+            ta.stochRecovery ||
+            (ta.mfi != null && ta.mfi < 30) ||
+            (ta.williamsR != null && ta.williamsR < -75) ||
+            (ta.cci != null && ta.cci < -80) ||
+            ta.macdCrossFromBelowZero ||
+            ta.rsiDivergence;
+
+          if (!hasAnySupportHint && !hasAnyOversoldHint) return;
+
+          // ── Fetch Fundamentals (only for promising candidates) ──
+          let fundamentals: FundamentalInput | null = null;
+          try {
+            const analysis = await getComprehensiveAnalysis2(
+              cleanSymbol.replace('.JK', ''),
+              market
+            );
+            const fundScore = computeFundamentalScore(analysis, market);
+
+            fundamentals = {
+              grade: fundScore.grade,
+              total: fundScore.total,
+              roe: analysis.fundamentals.roe,
+              debtToEquity: analysis.fundamentals.debtToEquity,
+              dividendYield: analysis.dividend.dividendYield,
+              analystUpside: fundScore.analystUpside,
+              analystConsensus: fundScore.analystConsensus,
+              analystTargetPrice: analysis.analystRating.targetMeanPrice,
+            };
+          } catch {
+            // Fundamentals unavailable — detector will use ROE fallback or skip
+          }
+
+          // ── Detect BUY Signal ──
+          const signal = detectBuySignal(ta, market, fundamentals);
+          if (!signal.isBuy) return;
+
+          // ── Send Telegram Alert ──
+          const sent = await sendBuySignalAlert({
+            symbol: cleanSymbol,
+            market,
+            price: ta.close,
+            signal,
+          });
+
+          if (sent) alertsSent++;
+
+          // Mark as alerted regardless of send success (prevent spam on errors)
+          await markAlertedToday(symbol, {
+            timestamp: Date.now(),
+            price: ta.close,
+            reasons: signal.reasons.map(r => r.label),
+          });
+
+          matches.push({
+            symbol: cleanSymbol,
+            reasons: signal.reasons.map(r => r.label),
+            alerted: sent,
+          });
+
+        } catch (err) {
+          console.error(`[cron/alerts] Error scanning ${symbol}:`, err);
         }
       })
     );

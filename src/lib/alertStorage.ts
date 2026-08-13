@@ -3,10 +3,10 @@ const kv = Redis.fromEnv();
 
 /**
  * Anti-Spam Storage Helper (`alertStorage.ts`)
- * Stores notified (symbol, preset, date) keys to ensure a stock is only alerted
- * at most ONCE per 24 hours per preset.
+ * Stores notified (symbol, date) keys to ensure a stock is only alerted
+ * at most ONCE per 24 hours for BUY signals.
  *
- * Uses @vercel/kv (Redis) if KV_REST_API_URL / UPSTASH_REDIS_REST_URL is set.
+ * Uses @upstash/redis (Redis) if KV_REST_API_URL / UPSTASH_REDIS_REST_URL is set.
  * Automatically falls back to an in-memory cache if KV is unconfigured or unavailable.
  */
 
@@ -19,17 +19,17 @@ interface LocalAlertRecord {
 const localCache = new Map<string, LocalAlertRecord>();
 const TTL_SECONDS = 86400; // 24 hours
 
-function getCacheKey(symbol: string, preset: string): string {
+function getCacheKey(symbol: string): string {
   const cleanSymbol = symbol.toUpperCase().trim();
   const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  return `alert:${dateStr}:${cleanSymbol}:${preset}`;
+  return `alert:${dateStr}:${cleanSymbol}:BUY`;
 }
 
 /**
- * Checks whether an alert for (symbol, preset) has already been sent today.
+ * Checks whether a BUY alert for this symbol has already been sent today.
  */
-export async function isAlertedToday(symbol: string, preset: string): Promise<boolean> {
-  const key = getCacheKey(symbol, preset);
+export async function isAlertedToday(symbol: string): Promise<boolean> {
+  const key = getCacheKey(symbol);
 
   // Check in-memory fallback first if KV env vars are not set
   if (!process.env.KV_REST_API_URL && !process.env.UPSTASH_REDIS_REST_URL) {
@@ -53,17 +53,17 @@ export async function isAlertedToday(symbol: string, preset: string): Promise<bo
 }
 
 /**
- * Marks an alert as sent today for (symbol, preset) with a 24-hour expiration.
+ * Marks a BUY alert as sent today for this symbol with a 24-hour expiration.
  */
-export async function markAlertedToday(symbol: string, preset: string, details?: any): Promise<void> {
-  const key = getCacheKey(symbol, preset);
+export async function markAlertedToday(symbol: string, details?: any): Promise<void> {
+  const key = getCacheKey(symbol);
 
   // Update in-memory fallback cache
   localCache.set(key, { timestamp: Date.now(), details });
 
   if (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL) {
     try {
-      await kv.set(key, details ?? { timestamp: Date.now(), symbol, preset }, { ex: TTL_SECONDS });
+      await kv.set(key, details ?? { timestamp: Date.now(), symbol }, { ex: TTL_SECONDS });
     } catch (error) {
       console.warn(`[alertStorage] KV error setting ${key}:`, error);
     }
