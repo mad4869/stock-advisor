@@ -1,36 +1,17 @@
-# StockAdvisor — Smart Money Swing Screener
+# StockAdvisor — Swing Screener
 
-A Next.js application for **swing trading** and **portfolio management** across the **US** (NYSE/NASDAQ) and **Indonesian** (IDX) stock markets. It combines a "smart money-first" accumulation screener with comprehensive fundamental analysis, position sizing, and portfolio tracking — all powered by Yahoo Finance data.
+A Next.js application for **swing trading** and **portfolio management** across the **US** (NYSE/NASDAQ) and **Indonesian** (IDX) stock markets. It combines a robust Technical Analysis (TA) screener with comprehensive fundamental analysis, position sizing, and portfolio tracking — all powered by Yahoo Finance data.
 
 ---
 
-## Core Philosophy: Smart Money First
+## Core Philosophy: TA + Fundamentals
 
-The application's screener implements a **two-gate architecture**:
+The application's screener focuses on a **balanced approach**:
 
-```
-OHLCV Data → Accumulation Gate → Technical Gate → Final Score
-             (Smart Money)       (TA Scoring)
-```
+1. **Technical Scoring:** Stocks are evaluated across four categories (trend, momentum, volume, structure) for a final 0–100 TA score.
+2. **Fundamental Guardrails:** Severe fundamental red flags (like negative cash flow or extreme overvaluation) block stocks from passing default presets, ensuring you don't buy value traps.
 
-1. **Gate 1 — Accumulation Proxy:** Uses 5 volume-based signals to detect institutional footprint. Stocks that don't show accumulation are rejected immediately — saving compute and filtering noise.
-2. **Gate 2 — Technical Scoring:** Only accumulating stocks proceed to full TA evaluation (trend, momentum, volume, structure) for a final 0–100 score.
-
-This ensures every screener result has institutional buying conviction behind it.
-
-### Accumulation Signals (Gate 1)
-
-| Signal | Method | Bullish When |
-|--------|--------|--------------|
-| A/D Line Trend | Accumulation/Distribution line slope (5-period) | Trending up |
-| Chaikin Money Flow | CMF (20-period) | CMF > 0 |
-| Volume Profile | Up-day vs down-day volume ratio (20-day) | Up-volume > down-volume |
-| OBV Divergence | On-Balance Volume vs price trend | OBV rising, price flat/falling |
-| Block Buying | High-volume up-days detection | Large institutional footprint present |
-
-Composite score: 0–100. A stock must score ≥ threshold (preset-dependent, typically 40–60) to pass Gate 1.
-
-### Technical Scoring (Gate 2)
+### Technical Scoring
 
 | Category | Max Points | Key Indicators |
 |----------|------------|----------------|
@@ -39,26 +20,24 @@ Composite score: 0–100. A stock must score ≥ threshold (preset-dependent, ty
 | Momentum | 25 | RSI, Stochastic, CCI |
 | Structure | 15 | ATR%, Bollinger %B, 52W high distance, Pivot S1 proximity |
 
-Stocks must score ≥ 60/100 to pass (40 for Oversold preset).
-
 ### Screener Presets
 
-| Preset | Gate 1 Threshold | Gate 2 Requirements |
-|--------|-----------------|---------------------|
-| **DEFAULT** | ≥ 40 | TA ≥ 60 |
-| **BREAKOUT** | ≥ 60 | TA ≥ 60 + Volume ≥ 2× + ADX > 25 + BB%B > 0.8 |
-| **OVERSOLD** | ≥ 40 | TA ≥ 40 + RSI 30–55 + near Pivot S1 |
-| **SMART_MONEY** | ≥ 80 | TA ≥ 60 + MACD increasing |
-| **VOLUME_CLIMAX** | ≥ 60 | TA ≥ 60 + Volume ≥ 3× + above EMA50 + RSI < 70 |
-| **SHORT_SQUEEZE** | ≥ 60 | TA ≥ 60 + Volume ≥ 2.5× + above EMA20 + Stoch recovery |
+| Preset | Description |
+|--------|-------------|
+| **DEFAULT** | TA ≥ 60 + Fundamental Guardrails (No P/E > 30, FCF > 0) |
+| **BREAKOUT** | TA ≥ 60 + Volume ≥ 2× + ADX > 25 + BB%B > 0.8 |
+| **OVERSOLD** | TA ≥ 40 + RSI < 40 + Stoch < 20 + MACD GC |
+| **VOLUME_CLIMAX** | TA ≥ 60 + Volume ≥ 3× + above EMA50 + RSI < 70 |
+| **MA_TREND** | TA ≥ 60 + Price > EMA20 > EMA50 > EMA200 |
+| **DEFENSIVE** | TA ≥ 50 + Beta < 1.0 + Div Yield > 3% + Quality Grade A/B |
 
 ---
 
 ## Features
 
 ### 🔍 Swing Screener
-- **Smart Money-first pipeline** — Accumulation gate filters out noise before TA scoring
-- **6 presets** — Default, Breakout, Oversold, Smart Money, Volume Climax, Short Squeeze
+- **Technical Analysis Focus** — Comprehensive scoring across trend, momentum, volume, and structure.
+- **Pre-configured Presets** — Default, Breakout, Oversold, Moving Average Trend, Defensive, and more.
 - **Dual market** — US (S&P 100, Tech 30) and IDX (LQ45, KOMPAS100, All ~960 stocks)
 - **Paginated results** — Server-side chunking with in-memory cache
 
@@ -78,6 +57,12 @@ Stocks must score ≥ 60/100 to pass (40 for Oversold preset).
 - **Portfolio dashboard** — Dual-currency P&L charts, win rate, best/worst performers
 - **Daily snapshots** — Automatic portfolio value tracking over time
 - **Closed positions history** — Full trade journal with plan adherence tracking
+
+### 🤖 Automated BUY Signals (Telegram)
+- **Convergent Signal Engine** — Scans for overlapping signals across Support, Oversold, and Value categories.
+- **Fundamental Quality Gate** — Ensures stocks passing technical scans aren't value traps (Grade A/B/C required).
+- **Rich Telegram Notifications** — Alerts include the exact reasons for the buy, entry prices, ATR-based stop loss, and target prices.
+- **Automated Scanning** — Triggered via a scheduled cron job (e.g., cron-job.org).
 
 ### 🧮 Position Calculator
 - **Risk-based sizing** — Calculate position size from capital, risk %, and stop-loss distance
@@ -134,8 +119,7 @@ src/
 ├── lib/
 │   ├── yahooFinance2.ts              # Yahoo Finance unified data service
 │   ├── stockData.ts                  # Stock quotes + historical data
-│   ├── swingScreener.ts              # Smart money-first screener pipeline
-│   ├── accumulationProxy.ts          # 5-signal accumulation detection
+│   ├── swingScreener.ts              # Swing screener pipeline
 │   ├── technicalIndicators.ts        # Full TA calculation (20+ indicators)
 │   ├── indicators.ts                 # Legacy indicator helpers
 │   ├── redFlags.ts                   # Financial red flag detection
@@ -165,9 +149,7 @@ Yahoo Finance API (v8 Chart + yahoo-finance2 library)
           │
           └─→ swingScreener.ts
                   │
-                  ├─→ accumulationProxy.ts (Gate 1: Smart Money)
-                  │
-                  └─→ technicalIndicators.ts (Gate 2: TA Scoring)
+                  └─→ technicalIndicators.ts (TA Scoring)
 ```
 
 ### State Management
@@ -263,8 +245,16 @@ No API keys are required — the app uses the free Yahoo Finance API.
 | `/api/watchlist` | POST | Batch update watchlist prices + signals | 30s |
 | `/api/status` | GET | Yahoo Finance connectivity check | — |
 | `/api/test` | GET/POST | Integration test suite | 30s |
+| `/api/cron/alerts` | GET | Scheduled BUY signal detector & Telegram notifier | 60s |
 
 All routes validate inputs (market, symbol format, pagination bounds).
+
+### Setting up Cron Jobs (cron-job.org)
+To trigger the Telegram alerts automatically, set up a cron job pointing to your deployed domain:
+- **IDX Market (WIB Hours):** `https://YOUR_DOMAIN.vercel.app/api/cron/alerts?market=ID&universe=ALL`
+- **US Market (EST Hours):** `https://YOUR_DOMAIN.vercel.app/api/cron/alerts?market=US&universe=SP100`
+
+*Note: You can use `?force=true` to test the route outside of market hours.*
 
 ---
 
