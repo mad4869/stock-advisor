@@ -124,16 +124,16 @@ export async function GET(request: NextRequest) {
 
           // ── Quick Pre-Filter: skip obviously healthy/overbought stocks ──
           // Only scan stocks that have at least one potential buy signal indicator
-          const hasAnySupportHint = (ta.bollingerB != null && ta.bollingerB < 0.30) ||
+          const hasAnySupportHint = (ta.bollingerB != null && ta.bollingerB < 0.15) ||
             (ta.distFromEMA50 != null && ta.distFromEMA50 >= -0.04 && ta.distFromEMA50 <= 0.02) ||
             (ta.distFromEMA200 != null && ta.distFromEMA200 >= -0.04 && ta.distFromEMA200 <= 0.02) ||
             (ta.distanceToS1 != null && ta.distanceToS1 <= 0.04);
 
-          const hasAnyOversoldHint = (ta.rsi != null && ta.rsi < 40) ||
+          const hasAnyOversoldHint = (ta.rsi != null && ta.rsi < 38) ||
             ta.stochRecovery ||
             (ta.mfi != null && ta.mfi < 30) ||
             (ta.williamsR != null && ta.williamsR < -75) ||
-            (ta.cci != null && ta.cci < -80) ||
+            (ta.cci != null && ta.cci < -90) ||
             ta.macdCrossFromBelowZero ||
             ta.rsiDivergence;
 

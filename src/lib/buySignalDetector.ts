@@ -81,8 +81,8 @@ export function detectBuySignal(
 
   let supportSignals = 0;
 
-  // 1a. Near Lower Bollinger Band
-  if (ta.bollingerB != null && ta.bollingerB < 0.20) {
+  // 1a. Near Lower Bollinger Band — must be really pinned to the band
+  if (ta.bollingerB != null && ta.bollingerB < 0.10) {
     supportSignals++;
     reasons.push({
       category: 'support',
@@ -159,8 +159,8 @@ export function detectBuySignal(
 
   let oversoldSignals = 0;
 
-  // 2a. RSI Oversold
-  if (ta.rsi != null && ta.rsi < 35) {
+  // 2a. RSI Oversold — strict threshold
+  if (ta.rsi != null && ta.rsi < 32) {
     oversoldSignals++;
     reasons.push({
       category: 'oversold',
@@ -233,10 +233,10 @@ export function detectBuySignal(
 
   let valueSignals = 0;
 
-  // 3a. Near 52-Week Low
+  // 3a. Near 52-Week Low — tighter proximity
   if (ta.fiftyTwoWeekLow != null && ta.fiftyTwoWeekLow > 0) {
     const distTo52wLow = (price - ta.fiftyTwoWeekLow) / ta.fiftyTwoWeekLow;
-    if (distTo52wLow <= 0.15 && distTo52wLow >= 0) {
+    if (distTo52wLow <= 0.10 && distTo52wLow >= 0) {
       valueSignals++;
       reasons.push({
         category: 'value',
@@ -284,18 +284,29 @@ export function detectBuySignal(
 
   let isBuy = false;
 
+  // Track whether any "confirmation" quality signals are present
+  // (these are the less co-moving, more independent signals)
+  const hasRsiDivergence = reasons.some(r => r.label === 'RSI Bullish Divergence');
+  const hasMacdGC = reasons.some(r => r.label === 'MACD Golden Cross');
+  const hasStochRecovery = reasons.some(r => r.label === 'Stochastic Recovery');
+  const hasHighQualityOversold = hasRsiDivergence || hasMacdGC || hasStochRecovery;
+
   if (fundamentalPass) {
-    // Rule 1: ≥2 support + ≥1 oversold
-    if (supportSignals >= 2 && oversoldSignals >= 1) {
+    // Rule 1: ≥3 support + ≥2 oversold — strong convergence required
+    if (supportSignals >= 3 && oversoldSignals >= 2) {
       isBuy = true;
     }
-    // Rule 2: ≥3 oversold signals alone
-    if (oversoldSignals >= 3) {
+    // Rule 1b: ≥2 support + ≥2 oversold, but at least one oversold must be a quality signal
+    if (supportSignals >= 2 && oversoldSignals >= 2 && hasHighQualityOversold) {
       isBuy = true;
     }
-    // Rule 3: near 52W low + ≥1 oversold + strong fundamentals
+    // Rule 2: ≥4 oversold alone, but must include at least one quality (non-co-moving) signal
+    if (oversoldSignals >= 4 && hasHighQualityOversold) {
+      isBuy = true;
+    }
+    // Rule 3: near 52W low + ≥2 oversold + grade A only (very strong value play)
     const has52wLow = reasons.some(r => r.label === 'Near 52-Week Low');
-    if (has52wLow && oversoldSignals >= 1 && fundGrade && strongGrades.includes(fundGrade)) {
+    if (has52wLow && oversoldSignals >= 2 && fundGrade === 'A') {
       isBuy = true;
     }
   }
