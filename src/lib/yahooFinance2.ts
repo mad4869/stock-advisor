@@ -17,6 +17,7 @@ import {
   AnnualBalanceSheet,
   AnnualCashFlow,
   DividendInfo,
+  DividendPayment,
   PeerData,
   ShortInterestData,
   EpsRevisionData,
@@ -271,26 +272,41 @@ export async function getComprehensiveAnalysis2(
   const ySymbol = toYSymbol(symbol, market);
   console.log(`[YF2] Comprehensive Analysis: ${ySymbol}`);
 
-  // Single quoteSummary call with all needed modules
-  const result: any = await retryYahooFinanceCall(() =>
-    yahooFinance.quoteSummary(ySymbol, {
-      modules: [
-        'assetProfile',
-        'defaultKeyStatistics',
-        'financialData',
-        'summaryDetail',
-        'earningsTrend',
-        'incomeStatementHistory',
-        'balanceSheetHistory',
-        'cashflowStatementHistory',
-        'calendarEvents',
-        'recommendationTrend',
-        'upgradeDowngradeHistory',   // NEW: analyst upgrade/downgrade activity
-        'insiderTransactions',       // NEW: insider trade transactions
-        'netSharePurchaseActivity',  // NEW: insider trade net summary
-      ],
-    })
-  );
+  // Concurrent quoteSummary and dividend event chart fetch
+  const fiveYearsAgo = new Date();
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
+
+  const [result, chartDivs]: [any, any] = await Promise.all([
+    retryYahooFinanceCall(() =>
+      yahooFinance.quoteSummary(ySymbol, {
+        modules: [
+          'assetProfile',
+          'defaultKeyStatistics',
+          'financialData',
+          'summaryDetail',
+          'earningsTrend',
+          'incomeStatementHistory',
+          'balanceSheetHistory',
+          'cashflowStatementHistory',
+          'calendarEvents',
+          'recommendationTrend',
+          'upgradeDowngradeHistory',   // NEW: analyst upgrade/downgrade activity
+          'insiderTransactions',       // NEW: insider trade transactions
+          'netSharePurchaseActivity',  // NEW: insider trade net summary
+        ],
+      })
+    ),
+    retryYahooFinanceCall(() =>
+      yahooFinance.chart(ySymbol, {
+        period1: fiveYearsAgo.toISOString().split('T')[0],
+        period2: new Date().toISOString().split('T')[0],
+        events: 'div',
+      })
+    ).catch((err: any) => {
+      console.warn(`[YF2] Failed to fetch dividend history for ${ySymbol}: ${err.message}`);
+      return null;
+    }),
+  ]);
 
   const ap = result.assetProfile || {};
   const ks = result.defaultKeyStatistics || {};
@@ -472,8 +488,18 @@ export async function getComprehensiveAnalysis2(
     };
   }).sort((a: AnnualCashFlow, b: AnnualCashFlow) => a.year.localeCompare(b.year));
 
-  // ---- Dividend Info ----
+  // ---- Dividend Info & History ----
   const calEvents = result.calendarEvents as any;
+
+  // Process historical dividend payment events from chart
+  const rawDividendEvents: any[] = chartDivs?.events?.dividends || [];
+  const dividendPayments: DividendPayment[] = rawDividendEvents
+    .filter((e: any) => e && e.amount != null && e.amount > 0 && e.date)
+    .map((e: any) => ({
+      date: fmtDate(e.date),
+      amount: Number(e.amount),
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date)); // Newest first
 
   // Derive dividend frequency: annualRate / lastSinglePayment ≈ payments per year
   // lastDividendValue may be in summaryDetail OR defaultKeyStatistics depending on the market
@@ -499,6 +525,24 @@ export async function getComprehensiveAnalysis2(
     }
   }
 
+  // Fallback: If frequency wasn't derived from ratios, estimate from past 12 months payments count
+  if (!dividendFrequencyLabel && dividendPayments.length > 0) {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoStr = oneYearAgo.toISOString().split('T')[0];
+    const recentPayments = dividendPayments.filter(p => p.date >= oneYearAgoStr);
+    const count = recentPayments.length;
+    if (count > 0) {
+      dividendFrequency = count;
+      dividendFrequencyLabel =
+        count >= 10 ? `Monthly (~12×/yr)` :
+        count === 4 ? `Quarterly (4×/yr)` :
+        count === 2 ? `Semi-Annual (2×/yr)` :
+        count === 1 ? `Annual (1×/yr)` :
+        `${count}×/yr`;
+    }
+  }
+
   const dividendInfo: DividendInfo = {
     dividendYield: fundamentalData.dividendYield,
     dividendRate: r(sd.dividendRate),
@@ -508,6 +552,7 @@ export async function getComprehensiveAnalysis2(
     fiveYearAvgDividendYield: r(sd.fiveYearAvgDividendYield),
     dividendFrequency,
     dividendFrequencyLabel,
+    payments: dividendPayments,
   };
 
   // ---- Analyst Rating ----

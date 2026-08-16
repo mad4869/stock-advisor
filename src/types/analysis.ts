@@ -78,6 +78,11 @@ export interface AnnualCashFlow {
 
 // ====== Dividend Info ======
 
+export interface DividendPayment {
+  date: string;                       // ISO date string (YYYY-MM-DD)
+  amount: number;                     // Dividend per share
+}
+
 export interface DividendInfo {
   dividendYield: number | null;       // %
   dividendRate: number | null;        // Annual per share
@@ -87,6 +92,7 @@ export interface DividendInfo {
   fiveYearAvgDividendYield: number | null;
   dividendFrequency: number | null;   // payments per year (1=annual, 2=semi, 4=quarterly, 12=monthly)
   dividendFrequencyLabel: string | null; // e.g. "Quarterly (4×/yr)"
+  payments?: DividendPayment[];       // Historical payout records per share
 }
 
 // ====== Short Interest ======
