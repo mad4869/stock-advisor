@@ -638,6 +638,7 @@ async function runScreenerForSymbolRaw(
           };
           
           result.dividendYield = analysis.dividend.dividendYield;
+          result.beta = analysis.fundamentals.beta;
 
           if (preset === 'HIGH_YIELD_DIVIDEND') {
             const yieldPct = analysis.dividend.dividendYield ?? 0;
