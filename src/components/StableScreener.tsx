@@ -52,6 +52,28 @@ export default function StableScreener({ mode }: StableScreenerProps) {
         if (currentPage >= data.pagination.totalPages) break;
         currentPage++;
       }
+      // Re-sort the full accumulated list (API only sorts per-page chunk)
+      if (mode === 'HIGH_YIELD_DIVIDEND') {
+        allResults.sort((a, b) => {
+          const aY = a.dividendYield ?? 0;
+          const bY = b.dividendYield ?? 0;
+          if (bY !== aY) return bY - aY;
+          const aF = a.fundamentalScore?.total ?? 0;
+          const bF = b.fundamentalScore?.total ?? 0;
+          if (bF !== aF) return bF - aF;
+          return (b.priceDiscountFromPeak ?? 0) - (a.priceDiscountFromPeak ?? 0);
+        });
+      } else {
+        allResults.sort((a, b) => {
+          const aBeta = (a.beta != null && a.beta > 0) ? a.beta : 1.0;
+          const bBeta = (b.beta != null && b.beta > 0) ? b.beta : 1.0;
+          if (aBeta !== bBeta) return aBeta - bBeta;
+          const aY = a.dividendYield ?? 0;
+          const bY = b.dividendYield ?? 0;
+          if (bY !== aY) return bY - aY;
+          return (b.fundamentalScore?.total ?? 0) - (a.fundamentalScore?.total ?? 0);
+        });
+      }
       setResults(allResults);
     } catch (err: any) {
       setError(err.message);
@@ -162,16 +184,17 @@ export default function StableScreener({ mode }: StableScreenerProps) {
                   <>
                     <th className="py-3 px-4 font-semibold">Beta</th>
                     <th className="py-3 px-4 font-semibold">Div Yield</th>
+                    <th className="py-3 px-4 font-semibold">Quality</th>
                     <th className="py-3 px-4 font-semibold">ATR%</th>
                   </>
                 ) : (
                   <>
                     <th className="py-3 px-4 font-semibold">Div Yield</th>
                     <th className="py-3 px-4 font-semibold">Frequency</th>
+                    <th className="py-3 px-4 font-semibold">Quality</th>
                     <th className="py-3 px-4 font-semibold">Discount from Peak</th>
                   </>
                 )}
-                <th className="py-3 px-4 font-semibold">Quality</th>
                 <th className="py-3 px-4 font-semibold">TA Score</th>
                 <th className="py-3 px-4 font-semibold">Why Passed</th>
                 <th className="py-3 px-4 text-right font-semibold"></th>
@@ -231,6 +254,11 @@ export default function StableScreener({ mode }: StableScreenerProps) {
                               : <span className="text-gray-600">—</span>}
                           </td>
                           <td className="py-3 px-4">
+                            {result.fundamentalScore
+                              ? <GradeBadge grade={result.fundamentalScore.grade} total={result.fundamentalScore.total} />
+                              : <span className="text-xs text-gray-500">N/A</span>}
+                          </td>
+                          <td className="py-3 px-4">
                             {atrPct != null
                               ? <span className={atrPct < 1.5 ? 'text-green-400' : atrPct < 2.5 ? 'text-yellow-400' : 'text-red-400'}>{atrPct.toFixed(2)}%</span>
                               : <span className="text-gray-600">—</span>}
@@ -246,7 +274,12 @@ export default function StableScreener({ mode }: StableScreenerProps) {
                           <td className="py-3 px-4">
                             {result.dividendFrequencyLabel
                               ? <span className="text-xs text-blue-300 font-medium">{result.dividendFrequencyLabel}</span>
-                              : <span className="text-gray-600 text-xs">Unknown</span>}
+                              : <span className="text-gray-600 text-xs">—</span>}
+                          </td>
+                          <td className="py-3 px-4">
+                            {result.fundamentalScore
+                              ? <GradeBadge grade={result.fundamentalScore.grade} total={result.fundamentalScore.total} />
+                              : <span className="text-xs text-gray-500">N/A</span>}
                           </td>
                           <td className="py-3 px-4">
                             {result.priceDiscountFromPeak != null && result.priceDiscountFromPeak > 0
@@ -255,12 +288,6 @@ export default function StableScreener({ mode }: StableScreenerProps) {
                           </td>
                         </>
                       )}
-
-                      <td className="py-3 px-4">
-                        {result.fundamentalScore
-                          ? <GradeBadge grade={result.fundamentalScore.grade} total={result.fundamentalScore.total} />
-                          : <span className="text-xs text-gray-500">N/A</span>}
-                      </td>
 
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">

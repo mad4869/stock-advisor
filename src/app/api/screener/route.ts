@@ -98,13 +98,26 @@ export async function GET(request: NextRequest) {
           const aDisc = a.priceDiscountFromPeak || 0;
           const bDisc = b.priceDiscountFromPeak || 0;
           return bDisc - aDisc;
-        } else {
-          // 1. (Removed Smart Money sort)
+        } else if (preset === 'DEFENSIVE') {
+          // 1. Sort by lowest beta (hard gate 0.1-0.8)
+          const aBeta = (a.beta != null && a.beta > 0) ? a.beta : 1.0;
+          const bBeta = (b.beta != null && b.beta > 0) ? b.beta : 1.0;
+          if (aBeta !== bBeta) return aBeta - bBeta;
 
-          // 2. Sort by TA Score
+          // 2. Sort by highest Dividend Yield
+          const aYield = a.dividendYield || 0;
+          const bYield = b.dividendYield || 0;
+          if (bYield !== aYield) return bYield - aYield;
+
+          // 3. Sort by best Fundamental Score
+          const aFund = a.fundamentalScore?.total || 0;
+          const bFund = b.fundamentalScore?.total || 0;
+          return bFund - aFund;
+        } else {
+          // 1. Sort by TA Score
           if (b.taScore !== a.taScore) return b.taScore - a.taScore;
   
-          // 3. Sort by Fundamental Score
+          // 2. Sort by Fundamental Score
           const aFund = a.fundamentalScore?.total || 0;
           const bFund = b.fundamentalScore?.total || 0;
           return bFund - aFund;

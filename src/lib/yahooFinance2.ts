@@ -476,8 +476,9 @@ export async function getComprehensiveAnalysis2(
   const calEvents = result.calendarEvents as any;
 
   // Derive dividend frequency: annualRate / lastSinglePayment ≈ payments per year
-  const annualDivRate = r(sd.dividendRate);
-  const lastDivValue = r(sd.lastDividendValue);
+  // lastDividendValue may be in summaryDetail OR defaultKeyStatistics depending on the market
+  const annualDivRate = r(sd.dividendRate) ?? r(sd.trailingAnnualDividendRate);
+  const lastDivValue = r(sd.lastDividendValue) ?? r(ks.lastDividendValue);
   let dividendFrequency: number | null = null;
   let dividendFrequencyLabel: string | null = null;
   if (annualDivRate != null && annualDivRate > 0 && lastDivValue != null && lastDivValue > 0) {
@@ -487,8 +488,8 @@ export async function getComprehensiveAnalysis2(
     const closest = knownFreqs.reduce((prev, curr) =>
       Math.abs(curr - rawFreq) < Math.abs(prev - rawFreq) ? curr : prev
     );
-    // Only accept if within 30% of a known frequency
-    if (Math.abs(closest - rawFreq) / closest < 0.30) {
+    // Accept if within 40% of a known frequency (wider tolerance for IDX stocks)
+    if (Math.abs(closest - rawFreq) / closest < 0.40) {
       dividendFrequency = closest;
       dividendFrequencyLabel =
         closest === 12 ? `Monthly (12×/yr)` :
