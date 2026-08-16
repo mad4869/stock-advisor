@@ -474,6 +474,30 @@ export async function getComprehensiveAnalysis2(
 
   // ---- Dividend Info ----
   const calEvents = result.calendarEvents as any;
+
+  // Derive dividend frequency: annualRate / lastSinglePayment ≈ payments per year
+  const annualDivRate = r(sd.dividendRate);
+  const lastDivValue = r(sd.lastDividendValue);
+  let dividendFrequency: number | null = null;
+  let dividendFrequencyLabel: string | null = null;
+  if (annualDivRate != null && annualDivRate > 0 && lastDivValue != null && lastDivValue > 0) {
+    const rawFreq = annualDivRate / lastDivValue;
+    // Snap to known frequencies: 1, 2, 4, 12
+    const knownFreqs = [1, 2, 4, 12];
+    const closest = knownFreqs.reduce((prev, curr) =>
+      Math.abs(curr - rawFreq) < Math.abs(prev - rawFreq) ? curr : prev
+    );
+    // Only accept if within 30% of a known frequency
+    if (Math.abs(closest - rawFreq) / closest < 0.30) {
+      dividendFrequency = closest;
+      dividendFrequencyLabel =
+        closest === 12 ? `Monthly (12×/yr)` :
+        closest === 4  ? `Quarterly (4×/yr)` :
+        closest === 2  ? `Semi-Annual (2×/yr)` :
+                         `Annual (1×/yr)`;
+    }
+  }
+
   const dividendInfo: DividendInfo = {
     dividendYield: fundamentalData.dividendYield,
     dividendRate: r(sd.dividendRate),
@@ -481,6 +505,8 @@ export async function getComprehensiveAnalysis2(
     exDividendDate: sd.exDividendDate ? fmtDate(sd.exDividendDate) : null,
     dividendDate: calEvents?.dividendDate ? fmtDate(calEvents.dividendDate) : null,
     fiveYearAvgDividendYield: r(sd.fiveYearAvgDividendYield),
+    dividendFrequency,
+    dividendFrequencyLabel,
   };
 
   // ---- Analyst Rating ----

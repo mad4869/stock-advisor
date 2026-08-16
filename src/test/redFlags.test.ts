@@ -147,6 +147,8 @@ function createMockAnalysis(overrides: Partial<ComprehensiveAnalysis> = {}): Com
       exDividendDate: '2023-11-15',
       dividendDate: '2023-12-15',
       fiveYearAvgDividendYield: 1.8,
+      dividendFrequency: 4,
+      dividendFrequencyLabel: 'Quarterly (4×/yr)',
     },
     analystRating: {
       buy: 8,

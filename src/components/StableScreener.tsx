@@ -78,7 +78,7 @@ export default function StableScreener({ mode }: StableScreenerProps) {
   };
 
   const isDefensive = mode === 'DEFENSIVE';
-  const colSpan = isDefensive ? 8 : 7;
+  const colSpan = 8;
 
   return (
     <div className="space-y-6">
@@ -167,6 +167,7 @@ export default function StableScreener({ mode }: StableScreenerProps) {
                 ) : (
                   <>
                     <th className="py-3 px-4 font-semibold">Div Yield</th>
+                    <th className="py-3 px-4 font-semibold">Frequency</th>
                     <th className="py-3 px-4 font-semibold">Discount from Peak</th>
                   </>
                 )}
@@ -241,6 +242,11 @@ export default function StableScreener({ mode }: StableScreenerProps) {
                             {result.dividendYield != null && result.dividendYield > 0
                               ? <span className="text-yellow-400 font-bold text-base">{result.dividendYield.toFixed(2)}%</span>
                               : <span className="text-gray-600">—</span>}
+                          </td>
+                          <td className="py-3 px-4">
+                            {result.dividendFrequencyLabel
+                              ? <span className="text-xs text-blue-300 font-medium">{result.dividendFrequencyLabel}</span>
+                              : <span className="text-gray-600 text-xs">Unknown</span>}
                           </td>
                           <td className="py-3 px-4">
                             {result.priceDiscountFromPeak != null && result.priceDiscountFromPeak > 0

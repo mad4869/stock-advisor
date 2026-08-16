@@ -260,6 +260,7 @@ export interface SwingScreenerResult {
   dividendYield?: number | null;
   priceDiscountFromPeak?: number | null;
   beta?: number | null;
+  dividendFrequencyLabel?: string | null;
 
   // Analyst consensus (surfaced from ComprehensiveAnalysis)
   analystUpside?: number | null;   // % upside to analyst mean price target

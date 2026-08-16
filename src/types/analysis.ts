@@ -85,6 +85,8 @@ export interface DividendInfo {
   exDividendDate: string | null;      // ISO date
   dividendDate: string | null;        // ISO date
   fiveYearAvgDividendYield: number | null;
+  dividendFrequency: number | null;   // payments per year (1=annual, 2=semi, 4=quarterly, 12=monthly)
+  dividendFrequencyLabel: string | null; // e.g. "Quarterly (4×/yr)"
 }
 
 // ====== Short Interest ======
