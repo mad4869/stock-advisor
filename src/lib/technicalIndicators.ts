@@ -91,6 +91,15 @@ export interface TAData {
   distFromEMA20: number | null;
   distFromEMA50: number | null;
   distFromEMA200: number | null;
+
+  // Breakout / Reversal Signals (for Category 4 BUY signals)
+  goldenCross: boolean;                  // EMA50 crossed above EMA200 within last 10 bars
+  priceReclaimedEma200: boolean;         // Price crossed above EMA200 from below within last 5 bars
+  breakoutAbove52wHigh: boolean;         // Price > 52W high (new breakout territory)
+  volumeBreakout: boolean;               // Volume > 2× 20-day avg on an up-day
+  bollingerBreakout: boolean;            // %B > 0.90 — price expanding above upper band
+  adxTrendStrong: boolean;               // ADX > 25 and +DI > -DI (strong trend confirmation)
+  ema50CrossedAboveEma200DaysAgo: number | null; // how many bars ago EMA50 crossed EMA200 (null = not in last 30)
 }
 
 export function calculateTA(historicalData: any[], market?: Market): TAData | null {
@@ -466,7 +475,52 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
   const distFromEMA50 = ema50 ? ((currentClose - ema50) / ema50) * 100 : null;
   const distFromEMA200 = ema200 ? ((currentClose - ema200) / ema200) * 100 : null;
 
+  // ── Breakout / Reversal Signals ────────────────────────────────
+
+  // Golden Cross: EMA50 crossed above EMA200 within the last 10 bars
+  const ema50CrossedAboveEma200DaysAgo = findCrossoverRecency(ema50Full, EMA.calculate({ period: 200, values: closes }), 30);
+  const goldenCross = ema50CrossedAboveEma200DaysAgo != null && ema50CrossedAboveEma200DaysAgo <= 10;
+
+  // Price reclaimed EMA200: price crossed above EMA200 from below within last 5 bars
+  let priceReclaimedEma200 = false;
+  if (ema200 != null && closes.length >= 6) {
+    const ema200Full = EMA.calculate({ period: 200, values: closes });
+    const alignOffset = closes.length - ema200Full.length;
+    // Look back up to 5 bars for crossover
+    for (let k = 1; k <= 5; k++) {
+      const ci = closes.length - 1 - k;
+      const ei = ema200Full.length - 1 - k;
+      if (ci >= 0 && ei >= 0 && ei + 1 < ema200Full.length && ci + 1 < closes.length) {
+        if (closes[ci] <= ema200Full[ei] && closes[ci + 1] > ema200Full[ei + 1]) {
+          priceReclaimedEma200 = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // Breakout above 52W high: current close > 52W high (current bar itself is the new high)
+  const breakoutAbove52wHigh = fiftyTwoWeekHigh != null && currentClose >= fiftyTwoWeekHigh && currentClose > 0;
+
+  // Volume breakout: today is an up-day AND volume is more than 2× the 20-day average
+  const prevClose = closes.length >= 2 ? closes[closes.length - 2] : null;
+  const volumeBreakout =
+    prevClose != null &&
+    currentClose > prevClose &&
+    volumeRatio != null &&
+    volumeRatio >= 2.0;
+
+  // Bollinger breakout: %B > 0.90 — price pushing strongly above upper band area
+  const bollingerBreakout = bollingerB != null && bollingerB > 0.90;
+
+  // ADX trend strength: ADX > 25 and bullish momentum (+DI > -DI)
+  const adxTrendStrong =
+    adx != null && adx > 25 &&
+    plusDi != null && minusDi != null &&
+    plusDi > minusDi;
+
   return {
+
     close: currentClose,
     high: currentHigh,
     low: currentLow,
@@ -517,7 +571,14 @@ export function calculateTA(historicalData: any[], market?: Market): TAData | nu
     macdCrossoverRecency,
     distFromEMA20,
     distFromEMA50,
-    distFromEMA200
+    distFromEMA200,
+    goldenCross,
+    priceReclaimedEma200,
+    breakoutAbove52wHigh,
+    volumeBreakout,
+    bollingerBreakout,
+    adxTrendStrong,
+    ema50CrossedAboveEma200DaysAgo,
   };
 }
 

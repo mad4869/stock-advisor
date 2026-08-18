@@ -33,8 +33,28 @@ export async function sendBuySignalAlert(payload: BuySignalPayload): Promise<boo
 
   const { symbol, market, price, signal } = payload;
 
-  // ── Build Reasons Block ──
-  const reasonLines = signal.reasons.map(r => `• ${r.label} (${r.detail})`).join('\n');
+  // ── Determine Signal Type ──
+  const isBreakoutDriven = signal.breakoutSignals > 0 &&
+    signal.breakoutSignals >= signal.oversoldSignals;
+  const signalTypeLabel = isBreakoutDriven ? '🚀 BREAKOUT' : '🟢 BUY';
+
+  // ── Group Reasons by Category ──
+  const categoryOrder = ['breakout', 'support', 'oversold', 'value'] as const;
+  const categoryEmoji: Record<string, string> = {
+    breakout: '🚀 Breakout/Reversal',
+    support: '🧱 At Support',
+    oversold: '📉 Oversold',
+    value: '💎 Value',
+  };
+  const reasonLines: string[] = [];
+  for (const cat of categoryOrder) {
+    const catReasons = signal.reasons.filter(r => r.category === cat);
+    if (catReasons.length === 0) continue;
+    reasonLines.push(`<b>${categoryEmoji[cat]}:</b>`);
+    for (const r of catReasons) {
+      reasonLines.push(`  • ${r.label} (${r.detail})`);
+    }
+  }
 
   // ── Build Entry Block ──
   const entryLines = signal.entries
@@ -70,10 +90,10 @@ export async function sendBuySignalAlert(payload: BuySignalPayload): Promise<boo
 
   // ── Assemble Message ──
   const message = [
-    `🟢 <b>BUY SIGNAL: ${symbol.replace('.JK', '')}</b> (${market === 'ID' ? 'IDX' : 'US'})`,
+    `${signalTypeLabel}: <b>${symbol.replace('.JK', '')}</b> (${market === 'ID' ? 'IDX' : 'US'})`,
     '',
     `📊 <b>Why Buy:</b>`,
-    reasonLines,
+    reasonLines.join('\n'),
     '',
     `💰 <b>Entry:</b>`,
     entryLines,
@@ -90,6 +110,7 @@ export async function sendBuySignalAlert(payload: BuySignalPayload): Promise<boo
     .join('\n')
     .replace(/\n{3,}/g, '\n\n') // Collapse triple+ newlines
     .trim();
+
 
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

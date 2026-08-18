@@ -21,7 +21,7 @@ import { Market } from '@/types';
 // ─────────────────────────────────────────────────────────────
 
 export interface BuySignalReason {
-  category: 'support' | 'oversold' | 'value';
+  category: 'support' | 'oversold' | 'value' | 'breakout';
   label: string;
   detail: string;
 }
@@ -45,6 +45,7 @@ export interface BuySignalResult {
   supportSignals: number;
   oversoldSignals: number;
   valueSignals: number;
+  breakoutSignals: number;
   entries: PriceLevel[];
   stopLoss: PriceLevel | null;
   targets: PriceLevel[];
@@ -266,6 +267,74 @@ export function detectBuySignal(
     });
   }
 
+  // ── CATEGORY 4: Breakout / Trend Reversal ─────────────────
+
+  let breakoutSignals = 0;
+
+  // 4a. Golden Cross: EMA50 crossed above EMA200 within last 10 bars
+  if (ta.goldenCross) {
+    breakoutSignals++;
+    const daysAgo = ta.ema50CrossedAboveEma200DaysAgo;
+    reasons.push({
+      category: 'breakout',
+      label: 'Golden Cross',
+      detail: daysAgo === 0
+        ? 'EMA50 crossed above EMA200 today'
+        : `EMA50 crossed EMA200 ${daysAgo} bar${daysAgo !== 1 ? 's' : ''} ago`
+    });
+  }
+
+  // 4b. Price Reclaimed EMA200: crossed back above from below within last 5 bars
+  if (ta.priceReclaimedEma200) {
+    breakoutSignals++;
+    reasons.push({
+      category: 'breakout',
+      label: 'Reclaimed EMA200',
+      detail: `Price crossed above EMA200 — regime change signal`
+    });
+  }
+
+  // 4c. 52-Week High Breakout — only for grade A/B stocks (momentum setup)
+  if (ta.breakoutAbove52wHigh && fundamentals?.grade && ['A', 'B'].includes(fundamentals.grade)) {
+    breakoutSignals++;
+    reasons.push({
+      category: 'breakout',
+      label: '52W High Breakout',
+      detail: `Price at/above 52W high — breakout territory`
+    });
+  }
+
+  // 4d. Volume Breakout: up-day on 2×+ average volume
+  if (ta.volumeBreakout) {
+    breakoutSignals++;
+    const volStr = ta.volumeRatio != null ? `${ta.volumeRatio.toFixed(1)}× avg volume` : 'above avg volume';
+    reasons.push({
+      category: 'breakout',
+      label: 'Volume Breakout',
+      detail: `Up-day on ${volStr}`
+    });
+  }
+
+  // 4e. Bollinger Band Breakout: %B > 0.90
+  if (ta.bollingerBreakout) {
+    breakoutSignals++;
+    reasons.push({
+      category: 'breakout',
+      label: 'Bollinger Breakout',
+      detail: `%B: ${ta.bollingerB?.toFixed(2)} — expanding above upper band`
+    });
+  }
+
+  // 4f. Strong trend confirmed by ADX (ADX > 25, +DI > -DI)
+  if (ta.adxTrendStrong) {
+    breakoutSignals++;
+    reasons.push({
+      category: 'breakout',
+      label: 'Strong ADX Trend',
+      detail: `ADX: ${ta.adx?.toFixed(1)} (${ta.plusDi?.toFixed(1)} +DI > ${ta.minusDi?.toFixed(1)} -DI)`
+    });
+  }
+
   // ── FUNDAMENTAL QUALITY GATE ──────────────────────────────
 
   const fundGrade = fundamentals?.grade ?? null;
@@ -307,6 +376,25 @@ export function detectBuySignal(
     // Rule 3: near 52W low + ≥2 oversold + grade A only (very strong value play)
     const has52wLow = reasons.some(r => r.label === 'Near 52-Week Low');
     if (has52wLow && oversoldSignals >= 2 && fundGrade === 'A') {
+      isBuy = true;
+    }
+    // Rule 4: Breakout — requires ≥2 breakout signals + grade A/B
+    // This catches momentum/trend reversal entries that the mean-reversion rules would miss.
+    // Must include at least one structural signal (Golden Cross, Reclaimed EMA200, 52W Breakout)
+    // plus at least one confirmation (Volume or Bollinger or ADX).
+    const hasStructuralBreakout = reasons.some(r =>
+      r.label === 'Golden Cross' || r.label === 'Reclaimed EMA200' || r.label === '52W High Breakout'
+    );
+    const hasBreakoutConfirmation = reasons.some(r =>
+      r.label === 'Volume Breakout' || r.label === 'Bollinger Breakout' || r.label === 'Strong ADX Trend'
+    );
+    if (
+      breakoutSignals >= 2 &&
+      hasStructuralBreakout &&
+      hasBreakoutConfirmation &&
+      fundGrade != null &&
+      strongGrades.includes(fundGrade)
+    ) {
       isBuy = true;
     }
   }
@@ -427,6 +515,7 @@ export function detectBuySignal(
     supportSignals,
     oversoldSignals,
     valueSignals,
+    breakoutSignals,
     entries,
     stopLoss,
     targets,

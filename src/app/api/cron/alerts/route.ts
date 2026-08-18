@@ -137,7 +137,17 @@ export async function GET(request: NextRequest) {
             ta.macdCrossFromBelowZero ||
             ta.rsiDivergence;
 
-          if (!hasAnySupportHint && !hasAnyOversoldHint) return;
+          // Also let breakout/reversal setups through the pre-filter
+          const hasAnyBreakoutHint =
+            ta.goldenCross ||
+            ta.priceReclaimedEma200 ||
+            ta.breakoutAbove52wHigh ||
+            ta.volumeBreakout ||
+            ta.bollingerBreakout ||
+            ta.adxTrendStrong;
+
+          if (!hasAnySupportHint && !hasAnyOversoldHint && !hasAnyBreakoutHint) return;
+
 
           // ── Fetch Fundamentals (only for promising candidates) ──
           let fundamentals: FundamentalInput | null = null;
